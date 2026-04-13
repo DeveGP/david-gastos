@@ -251,6 +251,8 @@ async function enviar() {
             addHistory(msg, true);
             input.value = '';
             document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+            // Marcar que el dashboard necesita recarga
+            dashboardStale = true;
         } else throw new Error();
     } catch {
         fb.className = 'feedback err';
@@ -297,7 +299,10 @@ async function fetchSheet(range) {
     
     dbg('Fetching: ' + url);
     
-    var res = await fetch(url, { cache: 'no-store' });
+    var res = await fetch(url, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+    });
     
     if (!res.ok) {
         var body = '';
@@ -336,6 +341,7 @@ var currentDate = new Date();
 var allData = [];
 var chartInstance = null;
 var evolInstance = null;
+var dashboardStale = true;
 
 function changeMonth(d) {
     currentDate.setMonth(currentDate.getMonth() + d);
@@ -347,10 +353,16 @@ function updateMonthLabel() {
 }
 
 async function loadDashboard() {
+    // Si ya tenemos datos y no hay cambios pendientes, solo renderizar
+    if (allData.length > 0 && !dashboardStale) {
+        renderDashboard();
+        return;
+    }
     document.getElementById('dashboard-content').innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Cargando datos…</span></div>';
     try {
         var rows = await fetchSheet('Transacciones!A:J');
         allData = parseRows(rows);
+        dashboardStale = false;
         dbg('Dashboard: ' + allData.length + ' transacciones parseadas');
         renderDashboard();
     } catch(e) {
