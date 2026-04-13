@@ -289,11 +289,11 @@ document.getElementById('msgInput').addEventListener('keydown', function(e) {
    ========================================================= */
 async function fetchSheet(range) {
     // Construir URL manualmente — NO usar encodeURIComponent en el range
+    // NO añadir &_t= — Google Sheets API rechaza parámetros desconocidos (400)
     var url = 'https://sheets.googleapis.com/v4/spreadsheets/'
         + SHEET_ID + '/values/'
         + range.replace(/ /g, '%20')
-        + '?key=' + API_KEY
-        + '&_t=' + Date.now();
+        + '?key=' + API_KEY;
     
     dbg('Fetching: ' + url);
     
