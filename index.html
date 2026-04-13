@@ -295,7 +295,8 @@ function addHistory(text,ok){
 document.getElementById('msgInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();enviar();}});
 
 async function fetchSheet(range){
-  const url='https://sheets.googleapis.com/v4/spreadsheets/'+SHEET_ID+'/values/'+range.replace(/ /g,'%20')+'?key='+API_KEY+'&_t='+Date.now();
+  const parts=range.split('!');
+  const url='https://sheets.googleapis.com/v4/spreadsheets/'+SHEET_ID+'/values/'+encodeURIComponent(parts[0])+'!'+parts[1]+'?key='+API_KEY+'&_t='+Date.now();
   const res=await fetch(url,{cache:'no-store'});
   if(!res.ok)throw new Error('HTTP '+res.status);
   return(await res.json()).values||[];
