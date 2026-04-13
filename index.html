@@ -312,7 +312,7 @@ function updateMonthLabel(){document.getElementById('monthDisplay').textContent=
 async function loadDashboard(){
   
   document.getElementById('dashboard-content').innerHTML=`<div class="loading-state"><div class="spinner"></div><span>Cargando datos…</span></div>`;
-  try{allData=parseRows(await fetchSheet('Transacciones!A:J'));renderDashboard();}
+  try{allData=parseRows(await fetchSheet("'Transacciones'!A:J"));renderDashboard();}
   catch{document.getElementById('dashboard-content').innerHTML=`<div class="empty-state">No se pudieron cargar los datos.<br>Comprueba la API Key y la conexión.</div>`;}
 }
 
@@ -427,7 +427,7 @@ function renderDashboard(){
 
 async function loadHuchas(){
   document.getElementById('huchas-content').innerHTML=`<div class="loading-state"><div class="spinner"></div><span>Calculando saldos…</span></div>`;
-  try{renderHuchas(parseRows(await fetchSheet('Transacciones!A:J')));}
+  try{renderHuchas(parseRows(await fetchSheet("'Transacciones'!A:J")));}
   catch{document.getElementById('huchas-content').innerHTML=`<div class="empty-state">No se pudieron cargar los datos.</div>`;}
 }
 
