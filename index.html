@@ -149,6 +149,25 @@
   .hc-stat-val.in { color:var(--green); }
   .hc-stat-val.out { color:var(--red); }
   .hc-stat-val.neutral { color:var(--ink-dim); }
+
+  /* EVOLUCIÓN Y SEMÁFORO */
+  .evol-wrap { margin:0 24px 18px; background:var(--bg4); border:1px solid var(--border); border-radius:var(--radius); padding:20px 18px 16px; box-shadow:var(--shadow); }
+  .evol-title { font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:var(--ink-faint); margin-bottom:16px; font-weight:600; }
+  .evol-wrap canvas { max-height:160px; }
+
+  .semaforo-list { margin:0 24px 20px; display:flex; flex-direction:column; gap:6px; }
+  .semaforo-row { display:flex; align-items:center; gap:10px; padding:12px 16px; background:var(--bg4); border:1px solid var(--border); border-radius:var(--radius-sm); box-shadow:var(--shadow); }
+  .semaforo-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .semaforo-dot.verde { background:var(--green); }
+  .semaforo-dot.rojo { background:var(--red); }
+  .semaforo-dot.igual { background:var(--gold); }
+  .semaforo-name { flex:1; font-size:13px; color:var(--ink-dim); font-weight:300; }
+  .semaforo-vals { text-align:right; }
+  .semaforo-actual { font-size:13px; font-weight:500; color:var(--ink); }
+  .semaforo-diff { font-size:10px; margin-top:1px; }
+  .semaforo-diff.verde { color:var(--green); }
+  .semaforo-diff.rojo { color:var(--red); }
+  .semaforo-diff.igual { color:var(--gold); }
 </style>
 </head>
 <body>
@@ -237,8 +256,6 @@ const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','
 const SALDO_INICIAL={'Principal':608.54,'Fondo Emergencia':10252.73,'Fiscal y Proyectos':4447.78,'Hipoteca':0,'Jubilación':0};
 const OBJETIVO={'Fondo Emergencia':10000,'Hipoteca':35000};
 const COLORS=['#a07838','#2d7a52','#4a7ab5','#8b5e9e','#c07030','#a03030','#2d8a8a','#c8973f'];
-let chartInstance=null;
-
 function showPage(p){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
@@ -303,37 +320,104 @@ function filterMonth(data){
   return data.filter(r=>{const p=(r.Fecha||'').split('/');return p.length===3&&parseInt(p[2])===y&&parseInt(p[1])===m+1;});
 }
 
-function renderDashboard(){
-  updateMonthLabel();
-  if(!loaded)return;
-  const mes=filterMonth(allData);
-  const gastos=mes.filter(r=>r.Tipo==='Gasto');
-  const ingresos=mes.filter(r=>r.Tipo==='Ingreso');
+// Helpers para filtrar por mes/año arbitrario
+function filterByYM(data, y, m){
+  return data.filter(r=>{const p=(r.Fecha||'').split('/');return p.length===3&&parseInt(p[2])===y&&parseInt(p[1])===m+1;});
+}
+
+function getMonthData(offsetMonths){
+  const d=new Date(currentDate.getFullYear(), currentDate.getMonth()+offsetMonths, 1);
+  const rows=filterByYM(allData, d.getFullYear(), d.getMonth());
+  const gastos=rows.filter(r=>r.Tipo==='Gasto');
+  const ingresos=rows.filter(r=>r.Tipo==='Ingreso');
   const totalI=ingresos.reduce((s,r)=>s+(parseFloat(r.Monto)||0),0);
   const totalG=gastos.reduce((s,r)=>s+(parseFloat(r.Monto)||0),0);
-  const balance=totalI-totalG;
-  const pct=totalI>0?Math.round(balance/totalI*100):0;
   const catMap={};
   gastos.forEach(r=>{const c=r['Categoría']||r['Categoria']||'Otros';catMap[c]=(catMap[c]||0)+(parseFloat(r.Monto)||0);});
-  const cats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
+  return{totalI,totalG,catMap,label:MESES[d.getMonth()].substring(0,3)};
+}
+
+let chartInstance=null, evolInstance=null;
+
+function renderDashboard(){
+  updateMonthLabel();
+  if(!allData.length)return;
+
+  // Mes actual
+  const cur=getMonthData(0);
+  const prev=getMonthData(-1);
+  const balance=cur.totalI-cur.totalG;
+  const pct=cur.totalI>0?Math.round(balance/cur.totalI*100):0;
   const bCls=balance>0?'pos':balance<0?'neg':'zero';
+
+  // Categorías mes actual
+  const cats=Object.entries(cur.catMap).sort((a,b)=>b[1]-a[1]);
   let catsHTML='';
   cats.forEach(([name,amt],i)=>{
-    const p=totalG>0?Math.round(amt/totalG*100):0;
+    const p=cur.totalG>0?Math.round(amt/cur.totalG*100):0;
     catsHTML+=`<div class="cat-row"><div class="cat-dot" style="background:${COLORS[i%COLORS.length]}"></div><span class="cat-name">${name}</span><div class="cat-bar-wrap"><div class="cat-bar-fill" style="width:${p}%;background:${COLORS[i%COLORS.length]}"></div></div><span class="cat-amount">${fmt(amt)}</span></div>`;
   });
+
+  // Semáforo vs mes anterior
+  const allCats=[...new Set([...Object.keys(cur.catMap),...Object.keys(prev.catMap)])].sort();
+  let semaforoHTML='';
+  allCats.forEach(name=>{
+    const actual=cur.catMap[name]||0;
+    const anterior=prev.catMap[name]||0;
+    if(actual===0&&anterior===0)return;
+    const diff=actual-anterior;
+    const pctDiff=anterior>0?Math.round(diff/anterior*100):0;
+    const cls=diff<0?'verde':diff>0?'rojo':'igual';
+    const arrow=diff<0?'↓':diff>0?'↑':'-';
+    const diffTxt=anterior>0?`${arrow} ${Math.abs(pctDiff)}% vs mes ant.`:(anterior===0?'Nuevo':'-');
+    semaforoHTML+=`<div class="semaforo-row"><div class="semaforo-dot ${cls}"></div><span class="semaforo-name">${name}</span><div class="semaforo-vals"><div class="semaforo-actual">${fmt(actual)}</div><div class="semaforo-diff ${cls}">${diffTxt}</div></div></div>`;
+  });
+
+  // Datos evolución 3 meses
+  const m2=getMonthData(-2);
+  const evolLabels=[m2.label, prev.label, cur.label];
+  const evolI=[m2.totalI, prev.totalI, cur.totalI];
+  const evolG=[m2.totalG, prev.totalG, cur.totalG];
+
+  const mes=filterByYM(allData, currentDate.getFullYear(), currentDate.getMonth());
+  const ingresosCount=mes.filter(r=>r.Tipo==='Ingreso').length;
+  const gastosCount=mes.filter(r=>r.Tipo==='Gasto').length;
+
   document.getElementById('dashboard-content').innerHTML=`
     <div class="balance-hero">
       <div class="blabel">Balance del mes</div>
       <div class="bamount ${bCls}">${fmt(balance)}</div>
       <div class="bsub">Ingresos − Gastos</div>
-      ${totalI>0?`<div class="ahorro-pill">⬆ ${pct}% ahorro sobre ingresos</div>`:''}
+      ${cur.totalI>0?`<div class="ahorro-pill">⬆ ${pct}% ahorro sobre ingresos</div>`:''}
     </div>
     <div class="kpi-row">
-      <div class="kpi-tile in"><div class="kpi-label">Ingresos</div><div class="kpi-val">${fmt(totalI)}</div><div class="kpi-count">${ingresos.length} registro${ingresos.length!==1?'s':''}</div></div>
-      <div class="kpi-tile out"><div class="kpi-label">Gastos</div><div class="kpi-val">${fmt(totalG)}</div><div class="kpi-count">${gastos.length} registro${gastos.length!==1?'s':''}</div></div>
+      <div class="kpi-tile in"><div class="kpi-label">Ingresos</div><div class="kpi-val">${fmt(cur.totalI)}</div><div class="kpi-count">${ingresosCount} registro${ingresosCount!==1?'s':''}</div></div>
+      <div class="kpi-tile out"><div class="kpi-label">Gastos</div><div class="kpi-val">${fmt(cur.totalG)}</div><div class="kpi-count">${gastosCount} registro${gastosCount!==1?'s':''}</div></div>
     </div>
-    ${cats.length?`<div class="chart-wrap"><div class="chart-title">Distribución de gastos</div><canvas id="catChart"></canvas></div><div class="cat-list">${catsHTML}</div>`:`<div class="empty-state">Sin gastos registrados este mes.</div>`}`;
+    <div class="evol-wrap">
+      <div class="evol-title">Evolución 3 meses</div>
+      <canvas id="evolChart"></canvas>
+    </div>
+    ${cats.length?`<div class="chart-wrap"><div class="chart-title">Distribución de gastos</div><canvas id="catChart"></canvas></div>`:''}
+    ${semaforoHTML?`<div class="section-label" style="padding:0 24px;margin-bottom:10px">Vs mes anterior</div><div class="semaforo-list">${semaforoHTML}</div>`:''}
+    ${!cats.length?`<div class="empty-state">Sin gastos registrados este mes.</div>`:''}
+  `;
+
+  // Gráfico evolución
+  if(evolInstance){evolInstance.destroy();evolInstance=null;}
+  evolInstance=new Chart(document.getElementById('evolChart').getContext('2d'),{
+    type:'line',
+    data:{
+      labels:evolLabels,
+      datasets:[
+        {label:'Ingresos',data:evolI,borderColor:'#2d7a52',backgroundColor:'rgba(45,122,82,0.08)',borderWidth:2,pointBackgroundColor:'#2d7a52',pointRadius:4,tension:0.3,fill:true},
+        {label:'Gastos',data:evolG,borderColor:'#a03030',backgroundColor:'rgba(160,48,48,0.06)',borderWidth:2,pointBackgroundColor:'#a03030',pointRadius:4,tension:0.3,fill:true}
+      ]
+    },
+    options:{responsive:true,plugins:{legend:{display:true,position:'bottom',labels:{font:{size:11},color:'#1a1612',boxWidth:10,padding:12}},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)}`},backgroundColor:'#1a1612',borderColor:'rgba(160,120,56,0.3)',borderWidth:1,titleColor:'#f5f0e8',bodyColor:'#c8973f',padding:10}},scales:{x:{grid:{display:false},ticks:{color:'rgba(26,22,18,0.4)',font:{size:11}}},y:{grid:{color:'rgba(160,120,56,0.08)'},ticks:{color:'rgba(26,22,18,0.4)',font:{size:10},callback:v=>v===0?'0':(v>=1000?(v/1000).toFixed(0)+'k':v)}}}}
+  });
+
+  // Gráfico donut
   if(cats.length){
     if(chartInstance){chartInstance.destroy();chartInstance=null;}
     chartInstance=new Chart(document.getElementById('catChart').getContext('2d'),{type:'doughnut',data:{labels:cats.map(c=>c[0]),datasets:[{data:cats.map(c=>c[1]),backgroundColor:cats.map((_,i)=>COLORS[i%COLORS.length]),borderWidth:0,hoverOffset:6}]},options:{responsive:true,cutout:'70%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmt(c.raw)}`},backgroundColor:'#1a1612',borderColor:'rgba(160,120,56,0.3)',borderWidth:1,titleColor:'#f5f0e8',bodyColor:'#c8973f',padding:10}}}});
