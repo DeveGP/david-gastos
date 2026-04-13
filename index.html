@@ -295,10 +295,9 @@ function addHistory(text,ok){
 document.getElementById('msgInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();enviar();}});
 
 async function fetchSheet(range){
-  const ts=Date.now();
-  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}?key=${API_KEY}&_t=${ts}`;
+  const url='https://sheets.googleapis.com/v4/spreadsheets/'+SHEET_ID+'/values/'+range.replace(/ /g,'%20')+'?key='+API_KEY+'&_t='+Date.now();
   const res=await fetch(url,{cache:'no-store'});
-  if(!res.ok)throw new Error();
+  if(!res.ok)throw new Error('HTTP '+res.status);
   return(await res.json()).values||[];
 }
 function parseRows(rows){if(!rows.length)return[];const h=rows[0];return rows.slice(1).map(r=>Object.fromEntries(h.map((k,i)=>[k,r[i]||''])));}
@@ -312,7 +311,7 @@ function updateMonthLabel(){document.getElementById('monthDisplay').textContent=
 async function loadDashboard(){
   
   document.getElementById('dashboard-content').innerHTML=`<div class="loading-state"><div class="spinner"></div><span>Cargando datos…</span></div>`;
-  try{allData=parseRows(await fetchSheet("'Transacciones'!A:J"));renderDashboard();}
+  try{allData=parseRows(await fetchSheet('Transacciones!A:J'));renderDashboard();}
   catch{document.getElementById('dashboard-content').innerHTML=`<div class="empty-state">No se pudieron cargar los datos.<br>Comprueba la API Key y la conexión.</div>`;}
 }
 
@@ -342,7 +341,7 @@ let chartInstance=null, evolInstance=null;
 
 function renderDashboard(){
   updateMonthLabel();
-  if(!allData.length)return;
+  // Render even with empty data — show zeros
 
   // Mes actual
   const cur=getMonthData(0);
@@ -427,7 +426,7 @@ function renderDashboard(){
 
 async function loadHuchas(){
   document.getElementById('huchas-content').innerHTML=`<div class="loading-state"><div class="spinner"></div><span>Calculando saldos…</span></div>`;
-  try{renderHuchas(parseRows(await fetchSheet("'Transacciones'!A:J")));}
+  try{renderHuchas(parseRows(await fetchSheet('Transacciones!A:J')));}
   catch{document.getElementById('huchas-content').innerHTML=`<div class="empty-state">No se pudieron cargar los datos.</div>`;}
 }
 
