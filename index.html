@@ -278,7 +278,8 @@ function addHistory(text,ok){
 document.getElementById('msgInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();enviar();}});
 
 async function fetchSheet(range){
-  const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}?key=${API_KEY}`);
+  const ts=Date.now();
+  const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}?key=${API_KEY}&_t=${ts}`,{cache:"no-store"});
   if(!res.ok)throw new Error();
   return(await res.json()).values||[];
 }
@@ -291,9 +292,9 @@ function changeMonth(d){currentDate.setMonth(currentDate.getMonth()+d);renderDas
 function updateMonthLabel(){document.getElementById('monthDisplay').textContent=MESES[currentDate.getMonth()]+' '+currentDate.getFullYear();}
 
 async function loadDashboard(){
-  if(loaded){renderDashboard();return;}
+  
   document.getElementById('dashboard-content').innerHTML=`<div class="loading-state"><div class="spinner"></div><span>Cargando datos…</span></div>`;
-  try{allData=parseRows(await fetchSheet('Transacciones!A:J'));loaded=true;renderDashboard();}
+  try{allData=parseRows(await fetchSheet('Transacciones!A:J'));renderDashboard();}
   catch{document.getElementById('dashboard-content').innerHTML=`<div class="empty-state">No se pudieron cargar los datos.<br>Comprueba la API Key y la conexión.</div>`;}
 }
 
