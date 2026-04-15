@@ -147,7 +147,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         <button class="send-btn" id="sendBtn" type="button">Enviar registro</button>
     </div>
     <div class="feedback" id="feedback"></div>
-    <div class="section-label" style="padding:24px 24px 10px">Historial de envíos</div>
+    <div class="section-label" style="padding:24px 24px 10px">Últimos envíos</div>
     <div id="historyList"></div>
 </div>
 
@@ -202,21 +202,12 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         SHEET_ID: '18cy6FPY0jbiCP0fOBQxEoQGt7wUAcJM_Ffze9yYNYLk',
         API_KEY: 'AIzaSyAPRB7T_g__DGj4BUxABQk1Xn7jPgRckUg',
         MESES: Object.freeze(['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']),
-        SALDO_INICIAL: Object.freeze({
-            'Principal': 608.54,
-            'Fondo Emergencia': 10252.73,
-            'Fiscal y Proyectos': 4447.78,
-            'Hipoteca': 0,
-            'Jubilación': 0
-        }),
-        OBJETIVO: Object.freeze({
-            'Fondo Emergencia': 10000,
-            'Hipoteca': 35000
-        }),
         COLORS: Object.freeze(['#a07838','#2d7a52','#4a7ab5','#8b5e9e','#c07030','#a03030','#2d8a8a','#c8973f']),
-        DEBUG: false, // Cambiar a false en producción
+        DEBUG: false,
         MAX_INPUT_LENGTH: 500,
-        REQUEST_TIMEOUT: 15000
+        REQUEST_TIMEOUT: 15000,
+        MAX_HISTORY_ITEMS: 5,
+        STORAGE_KEY: 'finanzas_historial'
     });
     
     /* =========================================================
@@ -225,10 +216,12 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
     const state = {
         currentDate: new Date(),
         allData: [],
+        cuentasData: {},  // Saldos iniciales y objetivos desde Sheets
         chartInstance: null,
         evolInstance: null,
         dashboardStale: true,
         huchasStale: true,
+        cuentasLoaded: false,
         isLoading: false
     };
 
@@ -264,6 +257,15 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         const num = parseFloat(val);
         return !isNaN(num) && isFinite(num);
     }
+    
+    function parseNumber(val) {
+        if (typeof val === 'number') return val;
+        if (typeof val !== 'string') return 0;
+        // Manejar formato español (coma decimal)
+        const cleaned = val.replace(/\s/g, '').replace(',', '.');
+        const num = parseFloat(cleaned);
+        return isValidNumber(num) ? num : 0;
+    }
 
     /* =========================================================
        NAVEGACIÓN
@@ -283,6 +285,73 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         
         if (p === 'dashboard') loadDashboard();
         if (p === 'huchas') loadHuchas();
+    }
+
+    /* =========================================================
+       HISTORIAL PERSISTENTE (localStorage)
+       ========================================================= */
+    function loadHistory() {
+        try {
+            const stored = localStorage.getItem(CONFIG.STORAGE_KEY);
+            if (!stored) return [];
+            const parsed = JSON.parse(stored);
+            if (!Array.isArray(parsed)) return [];
+            return parsed.slice(0, CONFIG.MAX_HISTORY_ITEMS);
+        } catch (e) {
+            dbg('Error loading history: ' + e.message);
+            return [];
+        }
+    }
+    
+    function saveHistory(history) {
+        try {
+            const toSave = history.slice(0, CONFIG.MAX_HISTORY_ITEMS);
+            localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(toSave));
+        } catch (e) {
+            dbg('Error saving history: ' + e.message);
+        }
+    }
+    
+    function renderHistory() {
+        const list = document.getElementById('historyList');
+        if (!list) return;
+        
+        const history = loadHistory();
+        list.innerHTML = '';
+        
+        if (history.length === 0) {
+            list.innerHTML = '<div class="empty-state" style="padding:20px">Sin registros recientes</div>';
+            return;
+        }
+        
+        history.forEach(function(item) {
+            const el = document.createElement('div');
+            el.className = 'history-item';
+            
+            const textSpan = document.createElement('span');
+            textSpan.className = 'hi-text';
+            textSpan.textContent = item.text;
+            
+            const badge = document.createElement('span');
+            badge.className = 'hi-badge ' + (item.ok ? 'ok' : 'err');
+            badge.textContent = item.ok ? 'OK' : 'Error';
+            
+            el.appendChild(textSpan);
+            el.appendChild(badge);
+            list.appendChild(el);
+        });
+    }
+    
+    function addToHistory(text, ok) {
+        const history = loadHistory();
+        // Añadir al principio
+        history.unshift({ text: text, ok: ok, time: Date.now() });
+        // Mantener solo MAX_HISTORY_ITEMS
+        while (history.length > CONFIG.MAX_HISTORY_ITEMS) {
+            history.pop();
+        }
+        saveHistory(history);
+        renderHistory();
     }
 
     /* =========================================================
@@ -307,7 +376,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         const msg = sanitizeInput(input.value);
         if (!msg) return;
         
-        // Prevenir doble envío
         state.isLoading = true;
         if (sendBtn) sendBtn.disabled = true;
         fb.className = 'feedback';
@@ -328,10 +396,9 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
             if (res.ok) {
                 fb.className = 'feedback ok';
                 fb.innerHTML = '✓ &nbsp;Registrado correctamente';
-                addHistory(msg, true);
+                addToHistory(msg, true);
                 input.value = '';
                 document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
-                // Marcar datos como obsoletos
                 state.dashboardStale = true;
                 state.huchasStale = true;
             } else {
@@ -344,7 +411,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
             } else {
                 fb.innerHTML = '✗ &nbsp;Error al conectar con N8N';
             }
-            addHistory(msg, false);
+            addToHistory(msg, false);
             dbg('Error enviar: ' + err.message);
         } finally {
             state.isLoading = false;
@@ -353,46 +420,14 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         }
     }
 
-    function addHistory(text, ok) {
-        const list = document.getElementById('historyList');
-        if (!list) return;
-        
-        const el = document.createElement('div');
-        el.className = 'history-item';
-        
-        const textSpan = document.createElement('span');
-        textSpan.className = 'hi-text';
-        textSpan.textContent = text; // textContent = seguro contra XSS
-        
-        const badge = document.createElement('span');
-        badge.className = 'hi-badge ' + (ok ? 'ok' : 'err');
-        badge.textContent = ok ? 'OK' : 'Error';
-        
-        el.appendChild(textSpan);
-        el.appendChild(badge);
-        list.prepend(el);
-        
-        // Limitar historial a 50 items
-        while (list.children.length > 50) {
-            list.removeChild(list.lastChild);
-        }
-    }
-
     /* =========================================================
-       fetchSheet — CORREGIDO
-       
-       BUG: encodeURIComponent convertía ":" en "%3A" causando
-       error 400 en Google Sheets API.
-       
-       SOLUCIÓN: Solo encodear espacios manualmente.
+       fetchSheet
        ========================================================= */
     async function fetchSheet(range) {
-        // Validar range básico
         if (typeof range !== 'string' || !range.match(/^[\w\s]+![A-Z]+:[A-Z]+$/)) {
             throw new Error('Range inválido: ' + range);
         }
         
-        // Construir URL - solo encodear espacios, NO usar encodeURIComponent
         const url = 'https://sheets.googleapis.com/v4/spreadsheets/' 
             + CONFIG.SHEET_ID + '/values/' 
             + range.replace(/ /g, '%20') 
@@ -406,10 +441,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         try {
             const res = await fetch(url, {
                 cache: 'no-store',
-                headers: { 
-                    'Cache-Control': 'no-cache', 
-                    'Pragma': 'no-cache' 
-                },
+                headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
                 signal: controller.signal
             });
             
@@ -418,9 +450,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
             if (!res.ok) {
                 let body = '';
                 try { body = await res.text(); } catch(e) {}
-                const errMsg = 'HTTP ' + res.status + ' — ' + body.substring(0, 200);
-                dbg('Error fetchSheet: ' + errMsg);
-                throw new Error(errMsg);
+                throw new Error('HTTP ' + res.status + ' — ' + body.substring(0, 200));
             }
             
             const json = await res.json();
@@ -434,6 +464,62 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
             }
             throw err;
         }
+    }
+
+    /* =========================================================
+       CARGAR CUENTAS (Saldos iniciales y objetivos desde Sheets)
+       ========================================================= */
+    async function loadCuentas() {
+        if (state.cuentasLoaded) return;
+        
+        try {
+            const rows = await fetchSheet('Cuentas!A:E');
+            if (rows.length < 2) return;
+            
+            // Parsear headers
+            const headers = rows[0];
+            const cuentaIdx = headers.indexOf('Cuenta');
+            const saldoIdx = headers.indexOf('Saldo_Inicial');
+            const objetivoIdx = headers.indexOf('Objetivo');
+            
+            if (cuentaIdx === -1) {
+                dbg('No se encontró columna "Cuenta" en hoja Cuentas');
+                return;
+            }
+            
+            // Parsear filas
+            rows.slice(1).forEach(function(row) {
+                const nombre = (row[cuentaIdx] || '').trim();
+                if (!nombre) return;
+                
+                state.cuentasData[nombre] = {
+                    saldoInicial: saldoIdx !== -1 ? parseNumber(row[saldoIdx]) : 0,
+                    objetivo: objetivoIdx !== -1 ? parseNumber(row[objetivoIdx]) : 0
+                };
+            });
+            
+            state.cuentasLoaded = true;
+            dbg('Cuentas cargadas: ' + Object.keys(state.cuentasData).join(', '));
+            
+        } catch (e) {
+            dbg('Error cargando Cuentas: ' + e.message);
+            // Fallback a valores por defecto si falla
+            state.cuentasData = {
+                'Principal': { saldoInicial: 0, objetivo: 0 },
+                'Fondo Emergencia': { saldoInicial: 0, objetivo: 10000 },
+                'Fiscal y Proyectos': { saldoInicial: 0, objetivo: 0 },
+                'Hipoteca': { saldoInicial: 0, objetivo: 35000 },
+                'Jubilación': { saldoInicial: 0, objetivo: 0 }
+            };
+        }
+    }
+    
+    function getSaldoInicial(nombre) {
+        return state.cuentasData[nombre]?.saldoInicial || 0;
+    }
+    
+    function getObjetivo(nombre) {
+        return state.cuentasData[nombre]?.objetivo || 0;
     }
 
     /* =========================================================
@@ -494,7 +580,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         const content = document.getElementById('dashboard-content');
         if (!content) return;
         
-        // Si ya tenemos datos frescos, solo renderizar
         if (state.allData.length > 0 && !state.dashboardStale) {
             renderDashboard();
             return;
@@ -529,20 +614,17 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         const ingresos = rows.filter(function(r) { return r.Tipo === 'Ingreso'; });
         
         const totalI = ingresos.reduce(function(s, r) { 
-            const m = parseFloat(r.Monto);
-            return s + (isValidNumber(m) ? m : 0); 
+            return s + parseNumber(r.Monto); 
         }, 0);
         
         const totalG = gastos.reduce(function(s, r) { 
-            const m = parseFloat(r.Monto);
-            return s + (isValidNumber(m) ? m : 0); 
+            return s + parseNumber(r.Monto); 
         }, 0);
         
         const catMap = {};
         gastos.forEach(function(r) {
             const c = r['Categoría'] || r['Categoria'] || 'Otros';
-            const m = parseFloat(r.Monto);
-            catMap[c] = (catMap[c] || 0) + (isValidNumber(m) ? m : 0);
+            catMap[c] = (catMap[c] || 0) + parseNumber(r.Monto);
         });
         
         return { 
@@ -576,7 +658,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
                 catsHTML += '<div class="cat-row"><div class="cat-dot" style="background:' + color + '"></div><span class="cat-name">' + escapeHtml(name) + '</span><div class="cat-bar-wrap"><div class="cat-bar-fill" style="width:' + p + '%;background:' + color + '"></div></div><span class="cat-amount">' + fmt(amt) + '</span></div>';
             });
 
-            // Semáforo vs mes anterior
             const allCatKeys = Object.keys(cur.catMap).concat(Object.keys(prev.catMap));
             const uniqueCats = [...new Set(allCatKeys)].sort();
             
@@ -595,13 +676,11 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
                 semaforoHTML += '<div class="semaforo-row"><div class="semaforo-dot ' + cls + '"></div><span class="semaforo-name">' + escapeHtml(name) + '</span><div class="semaforo-vals"><div class="semaforo-actual">' + fmt(actual) + '</div><div class="semaforo-diff ' + cls + '">' + escapeHtml(diffTxt) + '</div></div></div>';
             });
 
-            // Evolución 3 meses
             const m2 = getMonthData(-2);
             const evolLabels = [m2.label, prev.label, cur.label];
             const evolI = [m2.totalI, prev.totalI, cur.totalI];
             const evolG = [m2.totalG, prev.totalG, cur.totalG];
 
-            // Contadores del mes actual
             const mes = filterByYM(state.allData, state.currentDate.getFullYear(), state.currentDate.getMonth());
             const ingresosCount = mes.filter(function(r) { return r.Tipo === 'Ingreso'; }).length;
             const gastosCount = mes.filter(function(r) { return r.Tipo === 'Gasto'; }).length;
@@ -622,17 +701,9 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
                 (semaforoHTML ? '<div class="section-label" style="padding:0 24px;margin-bottom:10px">Vs mes anterior</div><div class="semaforo-list">' + semaforoHTML + '</div>' : '') +
                 (!cats.length ? '<div class="empty-state">Sin gastos registrados este mes.</div>' : '');
 
-            // Destruir gráficos anteriores
-            if (state.evolInstance) { 
-                state.evolInstance.destroy(); 
-                state.evolInstance = null; 
-            }
-            if (state.chartInstance) { 
-                state.chartInstance.destroy(); 
-                state.chartInstance = null; 
-            }
+            if (state.evolInstance) { state.evolInstance.destroy(); state.evolInstance = null; }
+            if (state.chartInstance) { state.chartInstance.destroy(); state.chartInstance = null; }
 
-            // Gráfico de evolución
             const evolCanvas = document.getElementById('evolChart');
             if (evolCanvas) {
                 state.evolInstance = new Chart(evolCanvas.getContext('2d'), {
@@ -640,68 +711,24 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
                     data: {
                         labels: evolLabels,
                         datasets: [
-                            {
-                                label: 'Ingresos', 
-                                data: evolI, 
-                                borderColor: '#2d7a52', 
-                                backgroundColor: 'rgba(45,122,82,0.08)', 
-                                borderWidth: 2, 
-                                pointBackgroundColor: '#2d7a52', 
-                                pointRadius: 4, 
-                                tension: 0.3, 
-                                fill: true
-                            },
-                            {
-                                label: 'Gastos', 
-                                data: evolG, 
-                                borderColor: '#a03030', 
-                                backgroundColor: 'rgba(160,48,48,0.06)', 
-                                borderWidth: 2, 
-                                pointBackgroundColor: '#a03030', 
-                                pointRadius: 4, 
-                                tension: 0.3, 
-                                fill: true
-                            }
+                            { label: 'Ingresos', data: evolI, borderColor: '#2d7a52', backgroundColor: 'rgba(45,122,82,0.08)', borderWidth: 2, pointBackgroundColor: '#2d7a52', pointRadius: 4, tension: 0.3, fill: true },
+                            { label: 'Gastos', data: evolG, borderColor: '#a03030', backgroundColor: 'rgba(160,48,48,0.06)', borderWidth: 2, pointBackgroundColor: '#a03030', pointRadius: 4, tension: 0.3, fill: true }
                         ]
                     },
                     options: {
                         responsive: true,
                         plugins: {
-                            legend: {
-                                display: true, 
-                                position: 'bottom', 
-                                labels: {font: {size: 11}, color: '#1a1612', boxWidth: 10, padding: 12}
-                            },
-                            tooltip: {
-                                callbacks: {label: function(c) { return ' ' + fmt(c.raw); }}, 
-                                backgroundColor: '#1a1612', 
-                                borderColor: 'rgba(160,120,56,0.3)', 
-                                borderWidth: 1, 
-                                titleColor: '#f5f0e8', 
-                                bodyColor: '#c8973f', 
-                                padding: 10
-                            }
+                            legend: { display: true, position: 'bottom', labels: {font: {size: 11}, color: '#1a1612', boxWidth: 10, padding: 12} },
+                            tooltip: { callbacks: {label: function(c) { return ' ' + fmt(c.raw); }}, backgroundColor: '#1a1612', borderColor: 'rgba(160,120,56,0.3)', borderWidth: 1, titleColor: '#f5f0e8', bodyColor: '#c8973f', padding: 10 }
                         },
                         scales: {
-                            x: {
-                                grid: {display: false}, 
-                                ticks: {color: 'rgba(26,22,18,0.4)', font: {size: 11}}
-                            },
-                            y: {
-                                grid: {color: 'rgba(160,120,56,0.08)'}, 
-                                ticks: {
-                                    color: 'rgba(26,22,18,0.4)', 
-                                    font: {size: 10}, 
-                                    callback: function(v) { return v === 0 ? '0' : (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v); }
-                                }, 
-                                beginAtZero: true
-                            }
+                            x: { grid: {display: false}, ticks: {color: 'rgba(26,22,18,0.4)', font: {size: 11}} },
+                            y: { grid: {color: 'rgba(160,120,56,0.08)'}, ticks: { color: 'rgba(26,22,18,0.4)', font: {size: 10}, callback: function(v) { return v === 0 ? '0' : (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v); } }, beginAtZero: true }
                         }
                     }
                 });
             }
 
-            // Gráfico de categorías
             if (cats.length) {
                 const catCanvas = document.getElementById('catChart');
                 if (catCanvas) {
@@ -709,27 +736,14 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
                         type: 'doughnut',
                         data: {
                             labels: cats.map(function(c) { return c[0]; }),
-                            datasets: [{
-                                data: cats.map(function(c) { return c[1]; }),
-                                backgroundColor: cats.map(function(_, i) { return CONFIG.COLORS[i % CONFIG.COLORS.length]; }),
-                                borderWidth: 0,
-                                hoverOffset: 6
-                            }]
+                            datasets: [{ data: cats.map(function(c) { return c[1]; }), backgroundColor: cats.map(function(_, i) { return CONFIG.COLORS[i % CONFIG.COLORS.length]; }), borderWidth: 0, hoverOffset: 6 }]
                         },
                         options: {
                             responsive: true,
                             cutout: '70%',
                             plugins: {
                                 legend: {display: false},
-                                tooltip: {
-                                    callbacks: {label: function(c) { return ' ' + fmt(c.raw); }}, 
-                                    backgroundColor: '#1a1612', 
-                                    borderColor: 'rgba(160,120,56,0.3)', 
-                                    borderWidth: 1, 
-                                    titleColor: '#f5f0e8', 
-                                    bodyColor: '#c8973f', 
-                                    padding: 10
-                                }
+                                tooltip: { callbacks: {label: function(c) { return ' ' + fmt(c.raw); }}, backgroundColor: '#1a1612', borderColor: 'rgba(160,120,56,0.3)', borderWidth: 1, titleColor: '#f5f0e8', bodyColor: '#c8973f', padding: 10 }
                             }
                         }
                     });
@@ -745,30 +759,22 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
     }
 
     /* =========================================================
-       HUCHAS — CORREGIDO
-       
-       BUG: La cuenta Principal no sumaba ingresos directos
-       (sin Cuenta_Destino especificada).
-       
-       SOLUCIÓN: Ingresos sin cuenta destino van a Principal.
+       HUCHAS
        ========================================================= */
     async function loadHuchas() {
         const content = document.getElementById('huchas-content');
         if (!content) return;
         
-        // Si tenemos datos frescos, usar los del dashboard
-        if (state.allData.length > 0 && !state.huchasStale) {
-            renderHuchas(state.allData);
-            return;
-        }
-        
         content.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Calculando saldos…</span></div>';
         
         try {
+            // Cargar cuentas primero (saldos iniciales y objetivos)
+            await loadCuentas();
+            
+            // Cargar transacciones
             const rows = await fetchSheet('Transacciones!A:J');
             const data = parseRows(rows);
             
-            // Actualizar estado compartido
             state.allData = data;
             state.huchasStale = false;
             state.dashboardStale = false;
@@ -782,11 +788,11 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
     }
 
     function calcSaldo(nombre, data) {
-        let s = CONFIG.SALDO_INICIAL[nombre] || 0;
+        let s = getSaldoInicial(nombre);
         
         data.forEach(function(r) {
-            const monto = parseFloat(r.Monto);
-            if (!isValidNumber(monto)) return;
+            const monto = parseNumber(r.Monto);
+            if (monto === 0) return;
             
             const tipo = r.Tipo || '';
             const origen = (r['Cuenta_Origen'] || r['CuentaOrigen'] || '').trim();
@@ -794,14 +800,14 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
             
             switch(tipo) {
                 case 'Ingreso':
-                    // CORREGIDO: Si no hay destino especificado, va a Principal
+                    // Ingresos sin destino van a Principal
                     if (destino === nombre || (nombre === 'Principal' && !destino)) {
                         s += monto;
                     }
                     break;
                     
                 case 'Gasto':
-                    // CORREGIDO: Si no hay origen especificado, sale de Principal
+                    // Gastos sin origen salen de Principal
                     if (origen === nombre || (nombre === 'Principal' && !origen)) {
                         s -= monto;
                     }
@@ -826,8 +832,8 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         let entradas = 0, salidas = 0;
         
         data.forEach(function(r) {
-            const monto = parseFloat(r.Monto);
-            if (!isValidNumber(monto)) return;
+            const monto = parseNumber(r.Monto);
+            if (monto === 0) return;
             
             if (r.Tipo === 'Transferencia') {
                 const destino = (r['Cuenta_Destino'] || r['CuentaDestino'] || '').trim();
@@ -846,17 +852,24 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         if (!content) return;
         
         const sp = calcSaldo('Principal', data);
-        const huchas = ['Fondo Emergencia', 'Fiscal y Proyectos', 'Hipoteca', 'Jubilación'];
+        
+        // Obtener lista de huchas desde cuentasData (excluir Principal)
+        const huchas = Object.keys(state.cuentasData).filter(function(n) {
+            return n !== 'Principal';
+        });
+        
+        // Si no hay cuentas cargadas, usar lista por defecto
+        const huchasList = huchas.length > 0 ? huchas : ['Fondo Emergencia', 'Fiscal y Proyectos', 'Hipoteca', 'Jubilación'];
         
         let html = '<div class="principal-banner"><div class="pb-left"><div class="plabel">Cuenta corriente</div><div class="pname">Principal</div></div><div class="pb-right"><div class="pamount">' + fmt(sp) + '</div><div class="plabel2">Saldo actual</div></div></div><div class="huchas-list">';
         
-        huchas.forEach(function(nombre) {
+        huchasList.forEach(function(nombre) {
             const saldo = calcSaldo(nombre, data);
-            const obj = CONFIG.OBJETIVO[nombre] || 0;
+            const obj = getObjetivo(nombre);
             const mov = calcMov(nombre, data);
             const pct = obj > 0 ? Math.min(100, Math.round(saldo / obj * 100)) : 0;
             const done = obj > 0 && saldo >= obj;
-            const inicial = CONFIG.SALDO_INICIAL[nombre] || 0;
+            const inicial = getSaldoInicial(nombre);
             
             html += '<div class="hucha-card">';
             html += '<div class="hc-top"><div><div class="hc-name">' + escapeHtml(nombre) + '</div><div class="hc-type">Hucha · CaixaBank</div></div><div class="hc-saldo"><div class="hc-saldo-num">' + fmt(saldo) + '</div><div class="hc-saldo-label">Saldo actual</div></div></div>';
@@ -879,10 +892,9 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
     }
 
     /* =========================================================
-       EVENT LISTENERS (delegación de eventos)
+       EVENT LISTENERS
        ========================================================= */
     function initEventListeners() {
-        // Navegación
         document.querySelectorAll('.nav-btn[data-page]').forEach(function(btn) {
             btn.addEventListener('click', function() {
                 const page = this.getAttribute('data-page');
@@ -890,7 +902,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
             });
         });
         
-        // Chips
         document.querySelectorAll('.chip[data-chip]').forEach(function(chip) {
             chip.addEventListener('click', function() {
                 const value = this.getAttribute('data-chip');
@@ -898,13 +909,11 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
             });
         });
         
-        // Botón enviar
         const sendBtn = document.getElementById('sendBtn');
         if (sendBtn) {
             sendBtn.addEventListener('click', enviar);
         }
         
-        // Input enter
         const msgInput = document.getElementById('msgInput');
         if (msgInput) {
             msgInput.addEventListener('keydown', function(e) {
@@ -915,7 +924,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
             });
         }
         
-        // Navegación de meses
         const monthPrev = document.getElementById('monthPrev');
         const monthNext = document.getElementById('monthNext');
         if (monthPrev) monthPrev.addEventListener('click', function() { changeMonth(-1); });
@@ -928,10 +936,10 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
     function init() {
         updateMonthLabel();
         initEventListeners();
+        renderHistory(); // Cargar historial desde localStorage
         dbg('App inicializada');
     }
     
-    // Esperar a que el DOM esté listo
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
