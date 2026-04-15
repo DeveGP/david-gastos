@@ -40,12 +40,13 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
 .send-wrap{padding:0 20px;margin-bottom:20px}
 .send-btn{width:100%;padding:14px;border-radius:var(--radius);background:var(--gold);color:#fff;font-size:15px;font-weight:500;border:none;cursor:pointer;font-family:var(--font-body);letter-spacing:0.3px;transition:opacity .2s}
 .send-btn:active{opacity:.85}
+.send-btn:disabled{opacity:.5;cursor:not-allowed}
 .feedback{padding:0 20px;font-size:13px;min-height:20px;transition:opacity .3s;opacity:0}
 .feedback.ok{opacity:1;color:var(--green)}.feedback.err{opacity:1;color:var(--red)}
 .section-label{font-family:var(--font-display);font-size:18px;font-weight:600;padding:24px 24px 10px;letter-spacing:-0.2px}
 .history-item{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-bottom:1px solid var(--gold-border)}
-.hi-text{flex:1;font-size:13px;color:var(--text);margin-right:10px}
-.hi-badge{font-size:11px;padding:3px 10px;border-radius:10px;font-weight:500}
+.hi-text{flex:1;font-size:13px;color:var(--text);margin-right:10px;word-break:break-word}
+.hi-badge{font-size:11px;padding:3px 10px;border-radius:10px;font-weight:500;flex-shrink:0}
 .hi-badge.ok{background:var(--green-bg);color:var(--green)}
 .hi-badge.err{background:var(--red-bg);color:var(--red)}
 
@@ -122,8 +123,8 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
 @keyframes spin{to{transform:rotate(360deg)}}
 .empty-state{text-align:center;padding:40px 20px;color:var(--sub);font-size:14px;line-height:1.6}
 
-/* DEBUG BANNER — borrar una vez confirmado que funciona */
-.debug-banner{background:#fffbe6;border-bottom:1px solid #e6d88a;padding:8px 20px;font-size:11px;color:#6b5900;font-family:monospace;display:none}
+/* DEBUG BANNER */
+.debug-banner{background:#fffbe6;border-bottom:1px solid #e6d88a;padding:8px 20px;font-size:11px;color:#6b5900;font-family:monospace;display:none;word-break:break-all}
 </style>
 </head>
 <body>
@@ -135,15 +136,15 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
     <div class="page-title">Registro</div>
     <div class="page-sub">Envía tus gastos e ingresos por texto</div>
     <div class="input-wrap">
-        <input type="text" class="msg-input" id="msgInput" placeholder="Ej: Gasto 25€ taxi al aeropuerto" enterkeyhint="send">
+        <input type="text" class="msg-input" id="msgInput" placeholder="Ej: Gasto 25€ taxi al aeropuerto" enterkeyhint="send" autocomplete="off">
     </div>
     <div class="chips">
-        <button class="chip" onclick="insertChip('Gasto')">Gasto</button>
-        <button class="chip" onclick="insertChip('Ingreso')">Ingreso</button>
-        <button class="chip" onclick="insertChip('Transferencia')">Transferencia</button>
+        <button class="chip" type="button" data-chip="Gasto">Gasto</button>
+        <button class="chip" type="button" data-chip="Ingreso">Ingreso</button>
+        <button class="chip" type="button" data-chip="Transferencia">Transferencia</button>
     </div>
     <div class="send-wrap">
-        <button class="send-btn" onclick="enviar()">Enviar registro</button>
+        <button class="send-btn" id="sendBtn" type="button">Enviar registro</button>
     </div>
     <div class="feedback" id="feedback"></div>
     <div class="section-label" style="padding:24px 24px 10px">Historial de envíos</div>
@@ -155,11 +156,11 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
     <div class="page-title">Dashboard</div>
     <div class="page-sub">Resumen de tus finanzas</div>
     <div class="month-nav">
-        <button class="month-btn" onclick="changeMonth(-1)">
+        <button class="month-btn" id="monthPrev" type="button" aria-label="Mes anterior">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
         <span class="month-display" id="monthDisplay"></span>
-        <button class="month-btn" onclick="changeMonth(1)">
+        <button class="month-btn" id="monthNext" type="button" aria-label="Mes siguiente">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
     </div>
@@ -175,423 +176,769 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
 
 <!-- BOTTOM NAV -->
 <nav class="bottom-nav">
-    <button class="nav-btn active" id="nav-registro" onclick="showPage('registro')">
+    <button class="nav-btn active" id="nav-registro" data-page="registro" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>
         Registro
     </button>
-    <button class="nav-btn" id="nav-dashboard" onclick="showPage('dashboard')">
+    <button class="nav-btn" id="nav-dashboard" data-page="dashboard" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>
         Dashboard
     </button>
-    <button class="nav-btn" id="nav-huchas" onclick="showPage('huchas')">
+    <button class="nav-btn" id="nav-huchas" data-page="huchas" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 5H5a2 2 0 00-2 2v10a2 2 0 002 2h14a2 2 0 002-2V7a2 2 0 00-2-2z"/><path d="M16 14a2 2 0 100-4 2 2 0 000 4z"/></svg>
         Huchas
     </button>
 </nav>
 
 <script>
-/* =========================================================
-   CONFIGURACIÓN
-   ========================================================= */
-const WEBHOOK = 'https://devegp.app.n8n.cloud/webhook/988ac9dc-924b-4baf-946e-ea6770ceb8d6';
-const SHEET_ID = '18cy6FPY0jbiCP0fOBQxEoQGt7wUAcJM_Ffze9yYNYLk';
-const API_KEY  = 'AIzaSyAPRB7T_g__DGj4BUxABQk1Xn7jPgRckUg';
-const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-const SALDO_INICIAL = {'Principal':608.54,'Fondo Emergencia':10252.73,'Fiscal y Proyectos':4447.78,'Hipoteca':0,'Jubilación':0};
-const OBJETIVO = {'Fondo Emergencia':10000,'Hipoteca':35000};
-const COLORS = ['#a07838','#2d7a52','#4a7ab5','#8b5e9e','#c07030','#a03030','#2d8a8a','#c8973f'];
-
-/* =========================================================
-   DEBUG — muestra errores en un banner visible en el iPhone
-   Borrar este bloque cuando todo esté estable.
-   ========================================================= */
-function dbg(msg) {
-    const el = document.getElementById('debugBanner');
-    if (el) { el.style.display = 'block'; el.textContent = msg; }
-    console.log('[DBG]', msg);
-}
-
-/* =========================================================
-   NAVEGACIÓN
-   ========================================================= */
-function showPage(p) {
-    document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
-    document.querySelectorAll('.nav-btn').forEach(x => x.classList.remove('active'));
-    document.getElementById('page-' + p).classList.add('active');
-    document.getElementById('nav-' + p).classList.add('active');
-    if (p === 'dashboard') loadDashboard();
-    if (p === 'huchas') loadHuchas();
-}
-
-/* =========================================================
-   REGISTRO
-   ========================================================= */
-function insertChip(t) {
-    document.getElementById('msgInput').value = t + ' ';
-    document.getElementById('msgInput').focus();
-    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
-    event.target.classList.add('active');
-}
-
-async function enviar() {
-    const input = document.getElementById('msgInput');
-    const msg = input.value.trim();
-    const fb = document.getElementById('feedback');
-    if (!msg) return;
-    fb.className = 'feedback';
-    try {
-        const res = await fetch(WEBHOOK, {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({texto: msg})
-        });
-        if (res.ok) {
-            fb.className = 'feedback ok';
-            fb.innerHTML = '✓ &nbsp;Registrado correctamente';
-            addHistory(msg, true);
-            input.value = '';
-            document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
-            // Marcar que el dashboard necesita recarga
-            dashboardStale = true;
-        } else throw new Error();
-    } catch {
-        fb.className = 'feedback err';
-        fb.innerHTML = '✗ &nbsp;Error al conectar con N8N';
-        addHistory(msg, false);
-    }
-    setTimeout(() => { fb.className = 'feedback'; }, 3000);
-}
-
-function addHistory(text, ok) {
-    const el = document.createElement('div');
-    el.className = 'history-item';
-    el.innerHTML = '<span class="hi-text">' + text + '</span><span class="hi-badge ' + (ok?'ok':'err') + '">' + (ok?'OK':'Error') + '</span>';
-    document.getElementById('historyList').prepend(el);
-}
-
-document.getElementById('msgInput').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviar(); }
-});
-
-/* =========================================================
-   fetchSheet — FUNCIÓN CORREGIDA
-   
-   BUG ORIGINAL: el código anterior usaba encodeURIComponent()
-   que convertía "Transacciones!A:J" en "Transacciones!A%3AJ"
-   — el %3A rompía la API de Google Sheets (error 400).
-   
-   Versiones posteriores usaban range.replace(/ /g, '%20')
-   que NO encodea el ":" — lo cual es correcto — PERO puede
-   que hayan quedado restos del encodeURIComponent en algún
-   sitio, o que el navegador cacheara la URL rota.
-   
-   SOLUCIÓN: construir la URL manualmente sin ningún encoding
-   automático del range. Solo se encodean espacios si los hay
-   en el nombre de la hoja.
-   ========================================================= */
-async function fetchSheet(range) {
-    // Construir URL manualmente — NO usar encodeURIComponent en el range
-    // NO añadir &_t= — Google Sheets API rechaza parámetros desconocidos (400)
-    var url = 'https://sheets.googleapis.com/v4/spreadsheets/'
-        + SHEET_ID + '/values/'
-        + range.replace(/ /g, '%20')
-        + '?key=' + API_KEY;
+(function() {
+    'use strict';
     
-    dbg('Fetching: ' + url);
-    
-    var res = await fetch(url, {
-        cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+    /* =========================================================
+       CONFIGURACIÓN
+       ========================================================= */
+    const CONFIG = Object.freeze({
+        WEBHOOK: 'https://devegp.app.n8n.cloud/webhook/988ac9dc-924b-4baf-946e-ea6770ceb8d6',
+        SHEET_ID: '18cy6FPY0jbiCP0fOBQxEoQGt7wUAcJM_Ffze9yYNYLk',
+        API_KEY: 'AIzaSyAPRB7T_g__DGj4BUxABQk1Xn7jPgRckUg',
+        MESES: Object.freeze(['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']),
+        SALDO_INICIAL: Object.freeze({
+            'Principal': 608.54,
+            'Fondo Emergencia': 10252.73,
+            'Fiscal y Proyectos': 4447.78,
+            'Hipoteca': 0,
+            'Jubilación': 0
+        }),
+        OBJETIVO: Object.freeze({
+            'Fondo Emergencia': 10000,
+            'Hipoteca': 35000
+        }),
+        COLORS: Object.freeze(['#a07838','#2d7a52','#4a7ab5','#8b5e9e','#c07030','#a03030','#2d8a8a','#c8973f']),
+        DEBUG: false, // Cambiar a false en producción
+        MAX_INPUT_LENGTH: 500,
+        REQUEST_TIMEOUT: 15000
     });
     
-    if (!res.ok) {
-        var body = '';
-        try { body = await res.text(); } catch(e) {}
-        var errMsg = 'HTTP ' + res.status + ' — ' + body.substring(0, 200);
-        dbg('Error fetchSheet: ' + errMsg);
-        throw new Error(errMsg);
-    }
-    
-    var json = await res.json();
-    dbg('fetchSheet OK — ' + ((json.values || []).length) + ' filas');
-    return json.values || [];
-}
+    /* =========================================================
+       ESTADO
+       ========================================================= */
+    const state = {
+        currentDate: new Date(),
+        allData: [],
+        chartInstance: null,
+        evolInstance: null,
+        dashboardStale: true,
+        huchasStale: true,
+        isLoading: false
+    };
 
-/* =========================================================
-   PARSEO Y UTILIDADES
-   ========================================================= */
-function parseRows(rows) {
-    if (!rows || rows.length < 2) return [];
-    var h = rows[0];
-    return rows.slice(1).map(function(r) {
-        var obj = {};
-        h.forEach(function(k, i) { obj[k] = r[i] || ''; });
-        return obj;
-    });
-}
-
-function fmt(n) {
-    return new Intl.NumberFormat('es-ES', {minimumFractionDigits:2, maximumFractionDigits:2}).format(n) + ' €';
-}
-
-/* =========================================================
-   DASHBOARD
-   ========================================================= */
-var currentDate = new Date();
-var allData = [];
-var chartInstance = null;
-var evolInstance = null;
-var dashboardStale = true;
-
-function changeMonth(d) {
-    currentDate.setMonth(currentDate.getMonth() + d);
-    renderDashboard();
-}
-
-function updateMonthLabel() {
-    document.getElementById('monthDisplay').textContent = MESES[currentDate.getMonth()] + ' ' + currentDate.getFullYear();
-}
-
-async function loadDashboard() {
-    // Si ya tenemos datos y no hay cambios pendientes, solo renderizar
-    if (allData.length > 0 && !dashboardStale) {
-        renderDashboard();
-        return;
-    }
-    document.getElementById('dashboard-content').innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Cargando datos…</span></div>';
-    try {
-        var rows = await fetchSheet('Transacciones!A:J');
-        allData = parseRows(rows);
-        dashboardStale = false;
-        dbg('Dashboard: ' + allData.length + ' transacciones parseadas');
-        renderDashboard();
-    } catch(e) {
-        dbg('loadDashboard error: ' + e.message);
-        document.getElementById('dashboard-content').innerHTML = '<div class="empty-state">No se pudieron cargar los datos.<br><br><small style="color:#a07838">' + e.message + '</small></div>';
-    }
-}
-
-function filterByYM(data, y, m) {
-    return data.filter(function(r) {
-        var p = (r.Fecha || '').split('/');
-        if (p.length !== 3) return false;
-        return parseInt(p[2]) === y && parseInt(p[1]) === (m + 1);
-    });
-}
-
-function getMonthData(offsetMonths) {
-    var d = new Date(currentDate.getFullYear(), currentDate.getMonth() + offsetMonths, 1);
-    var rows = filterByYM(allData, d.getFullYear(), d.getMonth());
-    var gastos = rows.filter(function(r) { return r.Tipo === 'Gasto'; });
-    var ingresos = rows.filter(function(r) { return r.Tipo === 'Ingreso'; });
-    var totalI = ingresos.reduce(function(s, r) { return s + (parseFloat(r.Monto) || 0); }, 0);
-    var totalG = gastos.reduce(function(s, r) { return s + (parseFloat(r.Monto) || 0); }, 0);
-    var catMap = {};
-    gastos.forEach(function(r) {
-        var c = r['Categoría'] || r['Categoria'] || 'Otros';
-        catMap[c] = (catMap[c] || 0) + (parseFloat(r.Monto) || 0);
-    });
-    return { totalI: totalI, totalG: totalG, catMap: catMap, label: MESES[d.getMonth()].substring(0, 3) };
-}
-
-function renderDashboard() {
-    try {
-        updateMonthLabel();
-
-        var cur = getMonthData(0);
-        var prev = getMonthData(-1);
-        var balance = cur.totalI - cur.totalG;
-        var pct = cur.totalI > 0 ? Math.round(balance / cur.totalI * 100) : 0;
-        var bCls = balance > 0 ? 'pos' : balance < 0 ? 'neg' : 'zero';
-
-        var cats = Object.entries(cur.catMap).sort(function(a, b) { return b[1] - a[1]; });
-        var catsHTML = '';
-        cats.forEach(function(item, i) {
-            var name = item[0], amt = item[1];
-            var p = cur.totalG > 0 ? Math.round(amt / cur.totalG * 100) : 0;
-            catsHTML += '<div class="cat-row"><div class="cat-dot" style="background:' + COLORS[i % COLORS.length] + '"></div><span class="cat-name">' + name + '</span><div class="cat-bar-wrap"><div class="cat-bar-fill" style="width:' + p + '%;background:' + COLORS[i % COLORS.length] + '"></div></div><span class="cat-amount">' + fmt(amt) + '</span></div>';
-        });
-
-        // Semáforo vs mes anterior
-        var allCatKeys = Object.keys(cur.catMap).concat(Object.keys(prev.catMap));
-        var uniqueCats = allCatKeys.filter(function(v, i, a) { return a.indexOf(v) === i; }).sort();
-        var semaforoHTML = '';
-        uniqueCats.forEach(function(name) {
-            var actual = cur.catMap[name] || 0;
-            var anterior = prev.catMap[name] || 0;
-            if (actual === 0 && anterior === 0) return;
-            var diff = actual - anterior;
-            var pctDiff = anterior > 0 ? Math.round(diff / anterior * 100) : 0;
-            var cls = diff < 0 ? 'verde' : diff > 0 ? 'rojo' : 'igual';
-            var arrow = diff < 0 ? '↓' : diff > 0 ? '↑' : '-';
-            var diffTxt = anterior > 0 ? (arrow + ' ' + Math.abs(pctDiff) + '% vs mes ant.') : (anterior === 0 && actual > 0 ? 'Nuevo' : '-');
-            semaforoHTML += '<div class="semaforo-row"><div class="semaforo-dot ' + cls + '"></div><span class="semaforo-name">' + name + '</span><div class="semaforo-vals"><div class="semaforo-actual">' + fmt(actual) + '</div><div class="semaforo-diff ' + cls + '">' + diffTxt + '</div></div></div>';
-        });
-
-        // Evolución 3 meses
-        var m2 = getMonthData(-2);
-        var evolLabels = [m2.label, prev.label, cur.label];
-        var evolI = [m2.totalI, prev.totalI, cur.totalI];
-        var evolG = [m2.totalG, prev.totalG, cur.totalG];
-
-        // Contadores del mes actual
-        var mes = filterByYM(allData, currentDate.getFullYear(), currentDate.getMonth());
-        var ingresosCount = mes.filter(function(r) { return r.Tipo === 'Ingreso'; }).length;
-        var gastosCount = mes.filter(function(r) { return r.Tipo === 'Gasto'; }).length;
-
-        document.getElementById('dashboard-content').innerHTML =
-            '<div class="balance-hero">' +
-                '<div class="blabel">Balance del mes</div>' +
-                '<div class="bamount ' + bCls + '">' + fmt(balance) + '</div>' +
-                '<div class="bsub">Ingresos − Gastos</div>' +
-                (cur.totalI > 0 ? '<div class="ahorro-pill">⬆ ' + pct + '% ahorro sobre ingresos</div>' : '') +
-            '</div>' +
-            '<div class="kpi-row">' +
-                '<div class="kpi-tile in"><div class="kpi-label">Ingresos</div><div class="kpi-val">' + fmt(cur.totalI) + '</div><div class="kpi-count">' + ingresosCount + ' registro' + (ingresosCount !== 1 ? 's' : '') + '</div></div>' +
-                '<div class="kpi-tile out"><div class="kpi-label">Gastos</div><div class="kpi-val">' + fmt(cur.totalG) + '</div><div class="kpi-count">' + gastosCount + ' registro' + (gastosCount !== 1 ? 's' : '') + '</div></div>' +
-            '</div>' +
-            '<div class="evol-wrap"><div class="evol-title">Evolución 3 meses</div><canvas id="evolChart"></canvas></div>' +
-            (cats.length ? '<div class="chart-wrap"><div class="chart-title">Distribución de gastos</div><canvas id="catChart"></canvas></div>' : '') +
-            (semaforoHTML ? '<div class="section-label" style="padding:0 24px;margin-bottom:10px">Vs mes anterior</div><div class="semaforo-list">' + semaforoHTML + '</div>' : '') +
-            (!cats.length ? '<div class="empty-state">Sin gastos registrados este mes.</div>' : '');
-
-        // Gráfico de evolución
-        if (evolInstance) { evolInstance.destroy(); evolInstance = null; }
-        var evolCanvas = document.getElementById('evolChart');
-        if (evolCanvas) {
-            evolInstance = new Chart(evolCanvas.getContext('2d'), {
-                type: 'line',
-                data: {
-                    labels: evolLabels,
-                    datasets: [
-                        {label:'Ingresos', data:evolI, borderColor:'#2d7a52', backgroundColor:'rgba(45,122,82,0.08)', borderWidth:2, pointBackgroundColor:'#2d7a52', pointRadius:4, tension:0.3, fill:true},
-                        {label:'Gastos', data:evolG, borderColor:'#a03030', backgroundColor:'rgba(160,48,48,0.06)', borderWidth:2, pointBackgroundColor:'#a03030', pointRadius:4, tension:0.3, fill:true}
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {display:true, position:'bottom', labels:{font:{size:11}, color:'#1a1612', boxWidth:10, padding:12}},
-                        tooltip: {callbacks:{label:function(c){return ' ' + fmt(c.raw);}}, backgroundColor:'#1a1612', borderColor:'rgba(160,120,56,0.3)', borderWidth:1, titleColor:'#f5f0e8', bodyColor:'#c8973f', padding:10}
-                    },
-                    scales: {
-                        x: {grid:{display:false}, ticks:{color:'rgba(26,22,18,0.4)', font:{size:11}}},
-                        y: {grid:{color:'rgba(160,120,56,0.08)'}, ticks:{color:'rgba(26,22,18,0.4)', font:{size:10}, callback:function(v){return v===0?'0':(v>=1000?(v/1000).toFixed(0)+'k':v);}}, beginAtZero:true}
-                    }
-                }
-            });
+    /* =========================================================
+       DEBUG
+       ========================================================= */
+    function dbg(msg) {
+        if (!CONFIG.DEBUG) return;
+        const el = document.getElementById('debugBanner');
+        if (el) { 
+            el.style.display = 'block'; 
+            el.textContent = String(msg).substring(0, 500); 
         }
+        console.log('[DBG]', msg);
+    }
 
-        // Gráfico de categorías (doughnut)
-        if (cats.length) {
-            if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
-            var catCanvas = document.getElementById('catChart');
-            if (catCanvas) {
-                chartInstance = new Chart(catCanvas.getContext('2d'), {
-                    type: 'doughnut',
+    /* =========================================================
+       UTILIDADES DE SEGURIDAD
+       ========================================================= */
+    function escapeHtml(str) {
+        if (typeof str !== 'string') return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+    
+    function sanitizeInput(str) {
+        if (typeof str !== 'string') return '';
+        return str.trim().substring(0, CONFIG.MAX_INPUT_LENGTH);
+    }
+    
+    function isValidNumber(val) {
+        const num = parseFloat(val);
+        return !isNaN(num) && isFinite(num);
+    }
+
+    /* =========================================================
+       NAVEGACIÓN
+       ========================================================= */
+    function showPage(p) {
+        const validPages = ['registro', 'dashboard', 'huchas'];
+        if (!validPages.includes(p)) return;
+        
+        document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
+        document.querySelectorAll('.nav-btn').forEach(x => x.classList.remove('active'));
+        
+        const pageEl = document.getElementById('page-' + p);
+        const navEl = document.getElementById('nav-' + p);
+        
+        if (pageEl) pageEl.classList.add('active');
+        if (navEl) navEl.classList.add('active');
+        
+        if (p === 'dashboard') loadDashboard();
+        if (p === 'huchas') loadHuchas();
+    }
+
+    /* =========================================================
+       REGISTRO
+       ========================================================= */
+    function insertChip(t, chipEl) {
+        const input = document.getElementById('msgInput');
+        if (!input) return;
+        input.value = t + ' ';
+        input.focus();
+        document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+        if (chipEl) chipEl.classList.add('active');
+    }
+
+    async function enviar() {
+        const input = document.getElementById('msgInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const fb = document.getElementById('feedback');
+        
+        if (!input || !fb || state.isLoading) return;
+        
+        const msg = sanitizeInput(input.value);
+        if (!msg) return;
+        
+        // Prevenir doble envío
+        state.isLoading = true;
+        if (sendBtn) sendBtn.disabled = true;
+        fb.className = 'feedback';
+        
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT);
+            
+            const res = await fetch(CONFIG.WEBHOOK, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ texto: msg }),
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (res.ok) {
+                fb.className = 'feedback ok';
+                fb.innerHTML = '✓ &nbsp;Registrado correctamente';
+                addHistory(msg, true);
+                input.value = '';
+                document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+                // Marcar datos como obsoletos
+                state.dashboardStale = true;
+                state.huchasStale = true;
+            } else {
+                throw new Error('HTTP ' + res.status);
+            }
+        } catch (err) {
+            fb.className = 'feedback err';
+            if (err.name === 'AbortError') {
+                fb.innerHTML = '✗ &nbsp;Tiempo de espera agotado';
+            } else {
+                fb.innerHTML = '✗ &nbsp;Error al conectar con N8N';
+            }
+            addHistory(msg, false);
+            dbg('Error enviar: ' + err.message);
+        } finally {
+            state.isLoading = false;
+            if (sendBtn) sendBtn.disabled = false;
+            setTimeout(() => { fb.className = 'feedback'; }, 3000);
+        }
+    }
+
+    function addHistory(text, ok) {
+        const list = document.getElementById('historyList');
+        if (!list) return;
+        
+        const el = document.createElement('div');
+        el.className = 'history-item';
+        
+        const textSpan = document.createElement('span');
+        textSpan.className = 'hi-text';
+        textSpan.textContent = text; // textContent = seguro contra XSS
+        
+        const badge = document.createElement('span');
+        badge.className = 'hi-badge ' + (ok ? 'ok' : 'err');
+        badge.textContent = ok ? 'OK' : 'Error';
+        
+        el.appendChild(textSpan);
+        el.appendChild(badge);
+        list.prepend(el);
+        
+        // Limitar historial a 50 items
+        while (list.children.length > 50) {
+            list.removeChild(list.lastChild);
+        }
+    }
+
+    /* =========================================================
+       fetchSheet — CORREGIDO
+       
+       BUG: encodeURIComponent convertía ":" en "%3A" causando
+       error 400 en Google Sheets API.
+       
+       SOLUCIÓN: Solo encodear espacios manualmente.
+       ========================================================= */
+    async function fetchSheet(range) {
+        // Validar range básico
+        if (typeof range !== 'string' || !range.match(/^[\w\s]+![A-Z]+:[A-Z]+$/)) {
+            throw new Error('Range inválido: ' + range);
+        }
+        
+        // Construir URL - solo encodear espacios, NO usar encodeURIComponent
+        const url = 'https://sheets.googleapis.com/v4/spreadsheets/' 
+            + CONFIG.SHEET_ID + '/values/' 
+            + range.replace(/ /g, '%20') 
+            + '?key=' + CONFIG.API_KEY;
+        
+        dbg('Fetching: ' + url);
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT);
+        
+        try {
+            const res = await fetch(url, {
+                cache: 'no-store',
+                headers: { 
+                    'Cache-Control': 'no-cache', 
+                    'Pragma': 'no-cache' 
+                },
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (!res.ok) {
+                let body = '';
+                try { body = await res.text(); } catch(e) {}
+                const errMsg = 'HTTP ' + res.status + ' — ' + body.substring(0, 200);
+                dbg('Error fetchSheet: ' + errMsg);
+                throw new Error(errMsg);
+            }
+            
+            const json = await res.json();
+            dbg('fetchSheet OK — ' + ((json.values || []).length) + ' filas');
+            return json.values || [];
+            
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError') {
+                throw new Error('Tiempo de espera agotado');
+            }
+            throw err;
+        }
+    }
+
+    /* =========================================================
+       PARSEO Y UTILIDADES
+       ========================================================= */
+    function parseRows(rows) {
+        if (!Array.isArray(rows) || rows.length < 2) return [];
+        
+        const headers = rows[0];
+        if (!Array.isArray(headers)) return [];
+        
+        return rows.slice(1).map(function(r) {
+            if (!Array.isArray(r)) return null;
+            const obj = {};
+            headers.forEach(function(k, i) { 
+                obj[String(k)] = r[i] !== undefined ? String(r[i]) : ''; 
+            });
+            return obj;
+        }).filter(Boolean);
+    }
+
+    function fmt(n) {
+        const num = parseFloat(n);
+        if (!isValidNumber(num)) return '0,00 €';
+        return new Intl.NumberFormat('es-ES', {
+            minimumFractionDigits: 2, 
+            maximumFractionDigits: 2
+        }).format(num) + ' €';
+    }
+    
+    function parseDate(dateStr) {
+        if (typeof dateStr !== 'string') return null;
+        const parts = dateStr.split('/');
+        if (parts.length !== 3) return null;
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10);
+        const year = parseInt(parts[2], 10);
+        if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+        return { day, month, year };
+    }
+
+    /* =========================================================
+       DASHBOARD
+       ========================================================= */
+    function changeMonth(d) {
+        state.currentDate.setMonth(state.currentDate.getMonth() + d);
+        renderDashboard();
+    }
+
+    function updateMonthLabel() {
+        const el = document.getElementById('monthDisplay');
+        if (el) {
+            el.textContent = CONFIG.MESES[state.currentDate.getMonth()] + ' ' + state.currentDate.getFullYear();
+        }
+    }
+
+    async function loadDashboard() {
+        const content = document.getElementById('dashboard-content');
+        if (!content) return;
+        
+        // Si ya tenemos datos frescos, solo renderizar
+        if (state.allData.length > 0 && !state.dashboardStale) {
+            renderDashboard();
+            return;
+        }
+        
+        content.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Cargando datos…</span></div>';
+        
+        try {
+            const rows = await fetchSheet('Transacciones!A:J');
+            state.allData = parseRows(rows);
+            state.dashboardStale = false;
+            dbg('Dashboard: ' + state.allData.length + ' transacciones parseadas');
+            renderDashboard();
+        } catch(e) {
+            dbg('loadDashboard error: ' + e.message);
+            content.innerHTML = '<div class="empty-state">No se pudieron cargar los datos.<br><br><small style="color:#a07838">' + escapeHtml(e.message) + '</small></div>';
+        }
+    }
+
+    function filterByYM(data, y, m) {
+        return data.filter(function(r) {
+            const parsed = parseDate(r.Fecha);
+            if (!parsed) return false;
+            return parsed.year === y && parsed.month === (m + 1);
+        });
+    }
+
+    function getMonthData(offsetMonths) {
+        const d = new Date(state.currentDate.getFullYear(), state.currentDate.getMonth() + offsetMonths, 1);
+        const rows = filterByYM(state.allData, d.getFullYear(), d.getMonth());
+        const gastos = rows.filter(function(r) { return r.Tipo === 'Gasto'; });
+        const ingresos = rows.filter(function(r) { return r.Tipo === 'Ingreso'; });
+        
+        const totalI = ingresos.reduce(function(s, r) { 
+            const m = parseFloat(r.Monto);
+            return s + (isValidNumber(m) ? m : 0); 
+        }, 0);
+        
+        const totalG = gastos.reduce(function(s, r) { 
+            const m = parseFloat(r.Monto);
+            return s + (isValidNumber(m) ? m : 0); 
+        }, 0);
+        
+        const catMap = {};
+        gastos.forEach(function(r) {
+            const c = r['Categoría'] || r['Categoria'] || 'Otros';
+            const m = parseFloat(r.Monto);
+            catMap[c] = (catMap[c] || 0) + (isValidNumber(m) ? m : 0);
+        });
+        
+        return { 
+            totalI: totalI, 
+            totalG: totalG, 
+            catMap: catMap, 
+            label: CONFIG.MESES[d.getMonth()].substring(0, 3) 
+        };
+    }
+
+    function renderDashboard() {
+        const content = document.getElementById('dashboard-content');
+        if (!content) return;
+        
+        try {
+            updateMonthLabel();
+
+            const cur = getMonthData(0);
+            const prev = getMonthData(-1);
+            const balance = cur.totalI - cur.totalG;
+            const pct = cur.totalI > 0 ? Math.round(balance / cur.totalI * 100) : 0;
+            const bCls = balance > 0 ? 'pos' : balance < 0 ? 'neg' : 'zero';
+
+            const cats = Object.entries(cur.catMap).sort(function(a, b) { return b[1] - a[1]; });
+            
+            let catsHTML = '';
+            cats.forEach(function(item, i) {
+                const name = item[0], amt = item[1];
+                const p = cur.totalG > 0 ? Math.round(amt / cur.totalG * 100) : 0;
+                const color = CONFIG.COLORS[i % CONFIG.COLORS.length];
+                catsHTML += '<div class="cat-row"><div class="cat-dot" style="background:' + color + '"></div><span class="cat-name">' + escapeHtml(name) + '</span><div class="cat-bar-wrap"><div class="cat-bar-fill" style="width:' + p + '%;background:' + color + '"></div></div><span class="cat-amount">' + fmt(amt) + '</span></div>';
+            });
+
+            // Semáforo vs mes anterior
+            const allCatKeys = Object.keys(cur.catMap).concat(Object.keys(prev.catMap));
+            const uniqueCats = [...new Set(allCatKeys)].sort();
+            
+            let semaforoHTML = '';
+            uniqueCats.forEach(function(name) {
+                const actual = cur.catMap[name] || 0;
+                const anterior = prev.catMap[name] || 0;
+                if (actual === 0 && anterior === 0) return;
+                
+                const diff = actual - anterior;
+                const pctDiff = anterior > 0 ? Math.round(diff / anterior * 100) : 0;
+                const cls = diff < 0 ? 'verde' : diff > 0 ? 'rojo' : 'igual';
+                const arrow = diff < 0 ? '↓' : diff > 0 ? '↑' : '-';
+                const diffTxt = anterior > 0 ? (arrow + ' ' + Math.abs(pctDiff) + '% vs mes ant.') : (anterior === 0 && actual > 0 ? 'Nuevo' : '-');
+                
+                semaforoHTML += '<div class="semaforo-row"><div class="semaforo-dot ' + cls + '"></div><span class="semaforo-name">' + escapeHtml(name) + '</span><div class="semaforo-vals"><div class="semaforo-actual">' + fmt(actual) + '</div><div class="semaforo-diff ' + cls + '">' + escapeHtml(diffTxt) + '</div></div></div>';
+            });
+
+            // Evolución 3 meses
+            const m2 = getMonthData(-2);
+            const evolLabels = [m2.label, prev.label, cur.label];
+            const evolI = [m2.totalI, prev.totalI, cur.totalI];
+            const evolG = [m2.totalG, prev.totalG, cur.totalG];
+
+            // Contadores del mes actual
+            const mes = filterByYM(state.allData, state.currentDate.getFullYear(), state.currentDate.getMonth());
+            const ingresosCount = mes.filter(function(r) { return r.Tipo === 'Ingreso'; }).length;
+            const gastosCount = mes.filter(function(r) { return r.Tipo === 'Gasto'; }).length;
+
+            content.innerHTML =
+                '<div class="balance-hero">' +
+                    '<div class="blabel">Balance del mes</div>' +
+                    '<div class="bamount ' + bCls + '">' + fmt(balance) + '</div>' +
+                    '<div class="bsub">Ingresos − Gastos</div>' +
+                    (cur.totalI > 0 ? '<div class="ahorro-pill">⬆ ' + pct + '% ahorro sobre ingresos</div>' : '') +
+                '</div>' +
+                '<div class="kpi-row">' +
+                    '<div class="kpi-tile in"><div class="kpi-label">Ingresos</div><div class="kpi-val">' + fmt(cur.totalI) + '</div><div class="kpi-count">' + ingresosCount + ' registro' + (ingresosCount !== 1 ? 's' : '') + '</div></div>' +
+                    '<div class="kpi-tile out"><div class="kpi-label">Gastos</div><div class="kpi-val">' + fmt(cur.totalG) + '</div><div class="kpi-count">' + gastosCount + ' registro' + (gastosCount !== 1 ? 's' : '') + '</div></div>' +
+                '</div>' +
+                '<div class="evol-wrap"><div class="evol-title">Evolución 3 meses</div><canvas id="evolChart"></canvas></div>' +
+                (cats.length ? '<div class="chart-wrap"><div class="chart-title">Distribución de gastos</div><canvas id="catChart"></canvas></div>' : '') +
+                (semaforoHTML ? '<div class="section-label" style="padding:0 24px;margin-bottom:10px">Vs mes anterior</div><div class="semaforo-list">' + semaforoHTML + '</div>' : '') +
+                (!cats.length ? '<div class="empty-state">Sin gastos registrados este mes.</div>' : '');
+
+            // Destruir gráficos anteriores
+            if (state.evolInstance) { 
+                state.evolInstance.destroy(); 
+                state.evolInstance = null; 
+            }
+            if (state.chartInstance) { 
+                state.chartInstance.destroy(); 
+                state.chartInstance = null; 
+            }
+
+            // Gráfico de evolución
+            const evolCanvas = document.getElementById('evolChart');
+            if (evolCanvas) {
+                state.evolInstance = new Chart(evolCanvas.getContext('2d'), {
+                    type: 'line',
                     data: {
-                        labels: cats.map(function(c){return c[0];}),
-                        datasets: [{
-                            data: cats.map(function(c){return c[1];}),
-                            backgroundColor: cats.map(function(_,i){return COLORS[i % COLORS.length];}),
-                            borderWidth: 0,
-                            hoverOffset: 6
-                        }]
+                        labels: evolLabels,
+                        datasets: [
+                            {
+                                label: 'Ingresos', 
+                                data: evolI, 
+                                borderColor: '#2d7a52', 
+                                backgroundColor: 'rgba(45,122,82,0.08)', 
+                                borderWidth: 2, 
+                                pointBackgroundColor: '#2d7a52', 
+                                pointRadius: 4, 
+                                tension: 0.3, 
+                                fill: true
+                            },
+                            {
+                                label: 'Gastos', 
+                                data: evolG, 
+                                borderColor: '#a03030', 
+                                backgroundColor: 'rgba(160,48,48,0.06)', 
+                                borderWidth: 2, 
+                                pointBackgroundColor: '#a03030', 
+                                pointRadius: 4, 
+                                tension: 0.3, 
+                                fill: true
+                            }
+                        ]
                     },
                     options: {
                         responsive: true,
-                        cutout: '70%',
                         plugins: {
-                            legend: {display:false},
-                            tooltip: {callbacks:{label:function(c){return ' ' + fmt(c.raw);}}, backgroundColor:'#1a1612', borderColor:'rgba(160,120,56,0.3)', borderWidth:1, titleColor:'#f5f0e8', bodyColor:'#c8973f', padding:10}
+                            legend: {
+                                display: true, 
+                                position: 'bottom', 
+                                labels: {font: {size: 11}, color: '#1a1612', boxWidth: 10, padding: 12}
+                            },
+                            tooltip: {
+                                callbacks: {label: function(c) { return ' ' + fmt(c.raw); }}, 
+                                backgroundColor: '#1a1612', 
+                                borderColor: 'rgba(160,120,56,0.3)', 
+                                borderWidth: 1, 
+                                titleColor: '#f5f0e8', 
+                                bodyColor: '#c8973f', 
+                                padding: 10
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: {display: false}, 
+                                ticks: {color: 'rgba(26,22,18,0.4)', font: {size: 11}}
+                            },
+                            y: {
+                                grid: {color: 'rgba(160,120,56,0.08)'}, 
+                                ticks: {
+                                    color: 'rgba(26,22,18,0.4)', 
+                                    font: {size: 10}, 
+                                    callback: function(v) { return v === 0 ? '0' : (v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v); }
+                                }, 
+                                beginAtZero: true
+                            }
                         }
                     }
                 });
             }
+
+            // Gráfico de categorías
+            if (cats.length) {
+                const catCanvas = document.getElementById('catChart');
+                if (catCanvas) {
+                    state.chartInstance = new Chart(catCanvas.getContext('2d'), {
+                        type: 'doughnut',
+                        data: {
+                            labels: cats.map(function(c) { return c[0]; }),
+                            datasets: [{
+                                data: cats.map(function(c) { return c[1]; }),
+                                backgroundColor: cats.map(function(_, i) { return CONFIG.COLORS[i % CONFIG.COLORS.length]; }),
+                                borderWidth: 0,
+                                hoverOffset: 6
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            cutout: '70%',
+                            plugins: {
+                                legend: {display: false},
+                                tooltip: {
+                                    callbacks: {label: function(c) { return ' ' + fmt(c.raw); }}, 
+                                    backgroundColor: '#1a1612', 
+                                    borderColor: 'rgba(160,120,56,0.3)', 
+                                    borderWidth: 1, 
+                                    titleColor: '#f5f0e8', 
+                                    bodyColor: '#c8973f', 
+                                    padding: 10
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+
+            dbg('renderDashboard OK');
+
+        } catch(e) {
+            dbg('renderDashboard error: ' + (e.message || e));
+            content.innerHTML = '<div class="empty-state">Error al renderizar el dashboard.<br><small>' + escapeHtml(e.message || '') + '</small></div>';
         }
-
-        dbg('renderDashboard OK');
-
-    } catch(e) {
-        dbg('renderDashboard error: ' + (e.message || e));
-        document.getElementById('dashboard-content').innerHTML = '<div class="empty-state">Error al renderizar el dashboard.<br><small>' + (e.message || '') + '</small></div>';
     }
-}
 
-/* =========================================================
-   HUCHAS
-   ========================================================= */
-async function loadHuchas() {
-    document.getElementById('huchas-content').innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Calculando saldos…</span></div>';
-    try {
-        var rows = await fetchSheet('Transacciones!A:J');
-        var data = parseRows(rows);
-        dbg('Huchas: ' + data.length + ' transacciones');
-        renderHuchas(data);
-    } catch(e) {
-        dbg('loadHuchas error: ' + e.message);
-        document.getElementById('huchas-content').innerHTML = '<div class="empty-state">No se pudieron cargar los datos.<br><small>' + e.message + '</small></div>';
+    /* =========================================================
+       HUCHAS — CORREGIDO
+       
+       BUG: La cuenta Principal no sumaba ingresos directos
+       (sin Cuenta_Destino especificada).
+       
+       SOLUCIÓN: Ingresos sin cuenta destino van a Principal.
+       ========================================================= */
+    async function loadHuchas() {
+        const content = document.getElementById('huchas-content');
+        if (!content) return;
+        
+        // Si tenemos datos frescos, usar los del dashboard
+        if (state.allData.length > 0 && !state.huchasStale) {
+            renderHuchas(state.allData);
+            return;
+        }
+        
+        content.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Calculando saldos…</span></div>';
+        
+        try {
+            const rows = await fetchSheet('Transacciones!A:J');
+            const data = parseRows(rows);
+            
+            // Actualizar estado compartido
+            state.allData = data;
+            state.huchasStale = false;
+            state.dashboardStale = false;
+            
+            dbg('Huchas: ' + data.length + ' transacciones');
+            renderHuchas(data);
+        } catch(e) {
+            dbg('loadHuchas error: ' + e.message);
+            content.innerHTML = '<div class="empty-state">No se pudieron cargar los datos.<br><small>' + escapeHtml(e.message) + '</small></div>';
+        }
     }
-}
 
-function calcSaldo(nombre, data) {
-    var s = SALDO_INICIAL[nombre] || 0;
-    data.forEach(function(r) {
-        var m = parseFloat(r.Monto) || 0;
-        var t = r.Tipo;
-        var o = r['Cuenta_Origen'] || '';
-        var d = r['Cuenta_Destino'] || '';
-        if (t === 'Ingreso' && d === nombre) s += m;
-        if (t === 'Gasto' && o === nombre) s -= m;
-        if (t === 'Transferencia') { if (d === nombre) s += m; if (o === nombre) s -= m; }
-        if (t === 'Valoracion' && d === nombre) s = m;
-    });
-    return s;
-}
+    function calcSaldo(nombre, data) {
+        let s = CONFIG.SALDO_INICIAL[nombre] || 0;
+        
+        data.forEach(function(r) {
+            const monto = parseFloat(r.Monto);
+            if (!isValidNumber(monto)) return;
+            
+            const tipo = r.Tipo || '';
+            const origen = (r['Cuenta_Origen'] || r['CuentaOrigen'] || '').trim();
+            const destino = (r['Cuenta_Destino'] || r['CuentaDestino'] || '').trim();
+            
+            switch(tipo) {
+                case 'Ingreso':
+                    // CORREGIDO: Si no hay destino especificado, va a Principal
+                    if (destino === nombre || (nombre === 'Principal' && !destino)) {
+                        s += monto;
+                    }
+                    break;
+                    
+                case 'Gasto':
+                    // CORREGIDO: Si no hay origen especificado, sale de Principal
+                    if (origen === nombre || (nombre === 'Principal' && !origen)) {
+                        s -= monto;
+                    }
+                    break;
+                    
+                case 'Transferencia':
+                    if (destino === nombre) s += monto;
+                    if (origen === nombre) s -= monto;
+                    break;
+                    
+                case 'Valoracion':
+                case 'Valoración':
+                    if (destino === nombre) s = monto;
+                    break;
+            }
+        });
+        
+        return s;
+    }
 
-function calcMov(nombre, data) {
-    var e = 0, s = 0;
-    data.forEach(function(r) {
-        var m = parseFloat(r.Monto) || 0;
-        if (r.Tipo === 'Transferencia') {
-            if (r['Cuenta_Destino'] === nombre) e += m;
-            if (r['Cuenta_Origen'] === nombre) s += m;
+    function calcMov(nombre, data) {
+        let entradas = 0, salidas = 0;
+        
+        data.forEach(function(r) {
+            const monto = parseFloat(r.Monto);
+            if (!isValidNumber(monto)) return;
+            
+            if (r.Tipo === 'Transferencia') {
+                const destino = (r['Cuenta_Destino'] || r['CuentaDestino'] || '').trim();
+                const origen = (r['Cuenta_Origen'] || r['CuentaOrigen'] || '').trim();
+                
+                if (destino === nombre) entradas += monto;
+                if (origen === nombre) salidas += monto;
+            }
+        });
+        
+        return { entradas, salidas };
+    }
+
+    function renderHuchas(data) {
+        const content = document.getElementById('huchas-content');
+        if (!content) return;
+        
+        const sp = calcSaldo('Principal', data);
+        const huchas = ['Fondo Emergencia', 'Fiscal y Proyectos', 'Hipoteca', 'Jubilación'];
+        
+        let html = '<div class="principal-banner"><div class="pb-left"><div class="plabel">Cuenta corriente</div><div class="pname">Principal</div></div><div class="pb-right"><div class="pamount">' + fmt(sp) + '</div><div class="plabel2">Saldo actual</div></div></div><div class="huchas-list">';
+        
+        huchas.forEach(function(nombre) {
+            const saldo = calcSaldo(nombre, data);
+            const obj = CONFIG.OBJETIVO[nombre] || 0;
+            const mov = calcMov(nombre, data);
+            const pct = obj > 0 ? Math.min(100, Math.round(saldo / obj * 100)) : 0;
+            const done = obj > 0 && saldo >= obj;
+            const inicial = CONFIG.SALDO_INICIAL[nombre] || 0;
+            
+            html += '<div class="hucha-card">';
+            html += '<div class="hc-top"><div><div class="hc-name">' + escapeHtml(nombre) + '</div><div class="hc-type">Hucha · CaixaBank</div></div><div class="hc-saldo"><div class="hc-saldo-num">' + fmt(saldo) + '</div><div class="hc-saldo-label">Saldo actual</div></div></div>';
+            
+            if (obj > 0) {
+                html += '<div class="hc-progress"><div class="hc-bar"><div class="hc-fill ' + (done ? 'done' : '') + '" style="width:' + pct + '%"></div></div><div class="hc-meta"><span class="pct">' + pct + '%</span><span>de ' + fmt(obj) + '</span></div></div>';
+            } else {
+                html += '<div class="hc-meta" style="margin-bottom:14px"><span>Sin objetivo definido</span></div>';
+            }
+            
+            html += '<div class="hc-stats">';
+            html += '<div class="hc-stat"><div class="hc-stat-label">Aportado</div><div class="hc-stat-val in">+' + fmt(mov.entradas) + '</div></div>';
+            html += '<div class="hc-stat"><div class="hc-stat-label">Retirado</div><div class="hc-stat-val out">−' + fmt(mov.salidas) + '</div></div>';
+            html += '<div class="hc-stat"><div class="hc-stat-label">Inicial</div><div class="hc-stat-val neutral">' + fmt(inicial) + '</div></div>';
+            html += '</div></div>';
+        });
+        
+        html += '</div>';
+        content.innerHTML = html;
+    }
+
+    /* =========================================================
+       EVENT LISTENERS (delegación de eventos)
+       ========================================================= */
+    function initEventListeners() {
+        // Navegación
+        document.querySelectorAll('.nav-btn[data-page]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                const page = this.getAttribute('data-page');
+                if (page) showPage(page);
+            });
+        });
+        
+        // Chips
+        document.querySelectorAll('.chip[data-chip]').forEach(function(chip) {
+            chip.addEventListener('click', function() {
+                const value = this.getAttribute('data-chip');
+                if (value) insertChip(value, this);
+            });
+        });
+        
+        // Botón enviar
+        const sendBtn = document.getElementById('sendBtn');
+        if (sendBtn) {
+            sendBtn.addEventListener('click', enviar);
         }
-    });
-    return {entradas: e, salidas: s};
-}
-
-function renderHuchas(data) {
-    var sp = calcSaldo('Principal', data);
-    var huchas = ['Fondo Emergencia','Fiscal y Proyectos','Hipoteca','Jubilación'];
-    var html = '<div class="principal-banner"><div class="pb-left"><div class="plabel">Cuenta corriente</div><div class="pname">Principal</div></div><div class="pb-right"><div class="pamount">' + fmt(sp) + '</div><div class="plabel2">Saldo actual</div></div></div><div class="huchas-list">';
-    
-    huchas.forEach(function(nombre) {
-        var saldo = calcSaldo(nombre, data);
-        var obj = OBJETIVO[nombre] || 0;
-        var mov = calcMov(nombre, data);
-        var pct = obj > 0 ? Math.min(100, Math.round(saldo / obj * 100)) : 0;
-        var done = obj > 0 && saldo >= obj;
         
-        html += '<div class="hucha-card"><div class="hc-top"><div><div class="hc-name">' + nombre + '</div><div class="hc-type">Hucha · CaixaBank</div></div><div class="hc-saldo"><div class="hc-saldo-num">' + fmt(saldo) + '</div><div class="hc-saldo-label">Saldo actual</div></div></div>';
-        
-        if (obj > 0) {
-            html += '<div class="hc-progress"><div class="hc-bar"><div class="hc-fill ' + (done ? 'done' : '') + '" style="width:' + pct + '%"></div></div><div class="hc-meta"><span class="pct">' + pct + '%</span><span>de ' + fmt(obj) + '</span></div></div>';
-        } else {
-            html += '<div class="hc-meta" style="margin-bottom:14px"><span>Sin objetivo definido</span></div>';
+        // Input enter
+        const msgInput = document.getElementById('msgInput');
+        if (msgInput) {
+            msgInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    enviar();
+                }
+            });
         }
         
-        html += '<div class="hc-stats"><div class="hc-stat"><div class="hc-stat-label">Aportado</div><div class="hc-stat-val in">+' + fmt(mov.entradas) + '</div></div><div class="hc-stat"><div class="hc-stat-label">Retirado</div><div class="hc-stat-val out">−' + fmt(mov.salidas) + '</div></div><div class="hc-stat"><div class="hc-stat-label">Inicial</div><div class="hc-stat-val neutral">' + fmt(SALDO_INICIAL[nombre] || 0) + '</div></div></div></div>';
-    });
-    
-    html += '</div>';
-    document.getElementById('huchas-content').innerHTML = html;
-}
+        // Navegación de meses
+        const monthPrev = document.getElementById('monthPrev');
+        const monthNext = document.getElementById('monthNext');
+        if (monthPrev) monthPrev.addEventListener('click', function() { changeMonth(-1); });
+        if (monthNext) monthNext.addEventListener('click', function() { changeMonth(1); });
+    }
 
-/* =========================================================
-   INIT
-   ========================================================= */
-updateMonthLabel();
+    /* =========================================================
+       INIT
+       ========================================================= */
+    function init() {
+        updateMonthLabel();
+        initEventListeners();
+        dbg('App inicializada');
+    }
+    
+    // Esperar a que el DOM esté listo
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+    
+})();
 </script>
 </body>
 </html>
