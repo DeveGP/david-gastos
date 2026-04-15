@@ -221,7 +221,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         evolInstance: null,
         dashboardStale: true,
         huchasStale: true,
-        cuentasLoaded: false,
         isLoading: false
     };
 
@@ -468,9 +467,10 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
 
     /* =========================================================
        CARGAR CUENTAS (Saldos iniciales y objetivos desde Sheets)
+       Siempre recarga para reflejar cambios manuales en Sheets
        ========================================================= */
     async function loadCuentas() {
-        if (state.cuentasLoaded) return;
+        // NO usar caché — siempre recargar para reflejar ajustes manuales
         
         try {
             const rows = await fetchSheet('Cuentas!A:E');
@@ -498,7 +498,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
                 };
             });
             
-            state.cuentasLoaded = true;
             dbg('Cuentas cargadas: ' + Object.keys(state.cuentasData).join(', '));
             
         } catch (e) {
