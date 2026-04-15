@@ -66,6 +66,8 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
 .kpi-label{font-size:12px;color:var(--sub);margin-bottom:4px}
 .kpi-val{font-family:var(--font-display);font-size:22px;font-weight:700;letter-spacing:-0.5px}
 .kpi-tile.in .kpi-val{color:var(--green)}.kpi-tile.out .kpi-val{color:var(--red)}
+.kpi-tile.cash-in .kpi-val{color:#2d8a8a}.kpi-tile.cash-out .kpi-val{color:#8a5a2d}
+.kpi-tile.cash-in,.kpi-tile.cash-out{background:linear-gradient(135deg,#f5f9f8,#eef5f3)}
 .kpi-count{font-size:11px;color:var(--sub);margin-top:2px}
 
 .evol-wrap{margin:16px 20px;padding:16px;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow)}
@@ -93,6 +95,8 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
 
 /* HUCHAS */
 .principal-banner{display:flex;justify-content:space-between;align-items:center;margin:0 20px 16px;padding:20px;background:linear-gradient(135deg,#1a1612,#2a2218);border-radius:var(--radius);color:#f5f0e8}
+.cash-banner{display:flex;justify-content:space-between;align-items:center;margin:0 20px 16px;padding:20px;background:linear-gradient(135deg,#2d5a4a,#1a3d32);border-radius:var(--radius);color:#f5f0e8}
+.cash-banner .pamount{color:#7dd3a8}
 .plabel{font-size:11px;opacity:.6;text-transform:uppercase;letter-spacing:1px}
 .pname{font-family:var(--font-display);font-size:22px;font-weight:600;margin-top:2px}
 .pb-right{text-align:right}
@@ -620,6 +624,24 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
             return s + parseNumber(r.Monto); 
         }, 0);
         
+        // Calcular ingresos y gastos en Cash
+        const ingresosCash = ingresos.filter(function(r) {
+            const destino = (r['Cuenta_Destino'] || r['CuentaDestino'] || '').trim();
+            return destino === 'Cash';
+        });
+        const gastosCash = gastos.filter(function(r) {
+            const origen = (r['Cuenta_Origen'] || r['CuentaOrigen'] || '').trim();
+            return origen === 'Cash';
+        });
+        
+        const totalICash = ingresosCash.reduce(function(s, r) { 
+            return s + parseNumber(r.Monto); 
+        }, 0);
+        
+        const totalGCash = gastosCash.reduce(function(s, r) { 
+            return s + parseNumber(r.Monto); 
+        }, 0);
+        
         const catMap = {};
         gastos.forEach(function(r) {
             const c = r['Categoría'] || r['Categoria'] || 'Otros';
@@ -628,7 +650,9 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         
         return { 
             totalI: totalI, 
-            totalG: totalG, 
+            totalG: totalG,
+            totalICash: totalICash,
+            totalGCash: totalGCash,
             catMap: catMap, 
             label: CONFIG.MESES[d.getMonth()].substring(0, 3) 
         };
@@ -683,6 +707,9 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
             const mes = filterByYM(state.allData, state.currentDate.getFullYear(), state.currentDate.getMonth());
             const ingresosCount = mes.filter(function(r) { return r.Tipo === 'Ingreso'; }).length;
             const gastosCount = mes.filter(function(r) { return r.Tipo === 'Gasto'; }).length;
+            
+            // Balance Cash del mes
+            const balanceCash = cur.totalICash - cur.totalGCash;
 
             content.innerHTML =
                 '<div class="balance-hero">' +
@@ -694,6 +721,10 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
                 '<div class="kpi-row">' +
                     '<div class="kpi-tile in"><div class="kpi-label">Ingresos</div><div class="kpi-val">' + fmt(cur.totalI) + '</div><div class="kpi-count">' + ingresosCount + ' registro' + (ingresosCount !== 1 ? 's' : '') + '</div></div>' +
                     '<div class="kpi-tile out"><div class="kpi-label">Gastos</div><div class="kpi-val">' + fmt(cur.totalG) + '</div><div class="kpi-count">' + gastosCount + ' registro' + (gastosCount !== 1 ? 's' : '') + '</div></div>' +
+                '</div>' +
+                '<div class="kpi-row">' +
+                    '<div class="kpi-tile cash-in"><div class="kpi-label">Cash recibido</div><div class="kpi-val">' + fmt(cur.totalICash) + '</div></div>' +
+                    '<div class="kpi-tile cash-out"><div class="kpi-label">Cash gastado</div><div class="kpi-val">' + fmt(cur.totalGCash) + '</div></div>' +
                 '</div>' +
                 '<div class="evol-wrap"><div class="evol-title">Evolución 3 meses</div><canvas id="evolChart"></canvas></div>' +
                 (cats.length ? '<div class="chart-wrap"><div class="chart-title">Distribución de gastos</div><canvas id="catChart"></canvas></div>' : '') +
@@ -858,16 +889,23 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         if (!content) return;
         
         const sp = calcSaldo('Principal', data);
+        const sc = calcSaldo('Cash', data);
         
-        // Obtener lista de huchas desde cuentasData (excluir Principal)
+        // Obtener lista de huchas desde cuentasData (excluir Principal y Cash)
         const huchas = Object.keys(state.cuentasData).filter(function(n) {
-            return n !== 'Principal';
+            return n !== 'Principal' && n !== 'Cash';
         });
         
         // Si no hay cuentas cargadas, usar lista por defecto
         const huchasList = huchas.length > 0 ? huchas : ['Fondo Emergencia', 'Fiscal y Proyectos', 'Hipoteca', 'Jubilación'];
         
-        let html = '<div class="principal-banner"><div class="pb-left"><div class="plabel">Cuenta corriente</div><div class="pname">Principal</div></div><div class="pb-right"><div class="pamount">' + fmt(sp) + '</div><div class="plabel2">Saldo actual</div></div></div><div class="huchas-list">';
+        // Banner Principal
+        let html = '<div class="principal-banner"><div class="pb-left"><div class="plabel">Cuenta corriente</div><div class="pname">Principal</div></div><div class="pb-right"><div class="pamount">' + fmt(sp) + '</div><div class="plabel2">Saldo actual</div></div></div>';
+        
+        // Banner Cash (color diferente)
+        html += '<div class="cash-banner"><div class="pb-left"><div class="plabel">Efectivo</div><div class="pname">Cash</div></div><div class="pb-right"><div class="pamount">' + fmt(sc) + '</div><div class="plabel2">Saldo actual</div></div></div>';
+        
+        html += '<div class="huchas-list">';
         
         huchasList.forEach(function(nombre) {
             const saldo = calcSaldo(nombre, data);
