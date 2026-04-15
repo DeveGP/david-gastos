@@ -821,6 +821,13 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
                 case 'Valoración':
                     if (destino === nombre) s = monto;
                     break;
+                    
+                case 'Ajuste':
+                    // Ajuste positivo: destino tiene la cuenta, suma
+                    // Ajuste negativo: origen tiene la cuenta, resta
+                    if (destino === nombre) s += monto;
+                    if (origen === nombre) s -= monto;
+                    break;
             }
         });
         
