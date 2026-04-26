@@ -1076,7 +1076,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         const totalG = gastos.reduce((a,b) => a+b, 0);
         const totalAhorro = totalI - totalG;
 
-        // Mejor y peor mes (por ahorro)
         const mesesConDatos = ahorro.map((v,i) => ({v, i})).filter(x => ingresos[x.i] > 0);
         const mejorMes = mesesConDatos.length ? mesesConDatos.reduce((a,b) => a.v > b.v ? a : b) : null;
         const peorMes  = mesesConDatos.length ? mesesConDatos.reduce((a,b) => a.v < b.v ? a : b) : null;
@@ -1115,7 +1114,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
             }
         });
 
-        // KPIs anuales
         const iEl = document.getElementById('anual-total-i');
         const gEl = document.getElementById('anual-total-g');
         const bEl = document.getElementById('anual-total-bal');
@@ -1214,7 +1212,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
        ANÁLISIS CSV/JSON
        ========================================================= */
 
-    // ---- Parsers ----
     function parseCSV(text) {
         const lines = text.trim().split(/\r?\n/);
         if (lines.length < 2) throw new Error('El CSV necesita al menos cabecera y una fila de datos.');
@@ -1252,7 +1249,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         if (Array.isArray(data)) {
             rows = data;
         } else if (typeof data === 'object' && data !== null) {
-            // Buscar el primer array dentro del objeto
             const key = Object.keys(data).find(k => Array.isArray(data[k]));
             if (key) rows = data[key];
             else rows = [data];
@@ -1267,7 +1263,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         const totalRows = rows.length;
         const sample = rows.slice(0, Math.min(CONFIG.MAX_ROWS_FOR_AI, totalRows));
 
-        // Estadísticas básicas por columna numérica
         const numCols = headers.filter(h => {
             const vals = sample.map(r => parseFloat(String(r[h]).replace(',','.'))).filter(v => !isNaN(v));
             return vals.length > sample.length * 0.5;
@@ -1283,18 +1278,11 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
             statsText += `\n- ${col}: suma=${sum.toFixed(2)}, media=${avg.toFixed(2)}, min=${min}, max=${max}`;
         });
 
-        // Muestra de datos (primeras filas como texto)
         const sampleRows = sample.slice(0, 20).map(r =>
             headers.map(h => r[h] || '').join(' | ')
         ).join('\n');
 
-        return {
-            totalRows,
-            headers,
-            statsText,
-            sampleRows,
-            sampleCount: sample.length
-        };
+        return { totalRows, headers, statsText, sampleRows, sampleCount: sample.length };
     }
 
     function buildAnalysisPrompt(summary) {
@@ -1323,7 +1311,6 @@ Sé directo. Si algo no cuadra, dilo. No suavices.`;
 
     function buildChatPrompt(userQuestion, summary, chatHistory) {
         const historyText = chatHistory.map(m => `${m.role === 'user' ? 'David' : 'Asesor'}: ${m.content}`).join('\n');
-        
         return `Eres el asesor financiero personal de David García. Responde su pregunta sobre el fichero financiero que acaba de subir.
 
 CONTEXTO DEL FICHERO:
@@ -1359,7 +1346,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
     }
 
     function formatAnalysisResult(text) {
-        // Convertir markdown básico a HTML
         return text
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/^(\d+\.\s+\*\*.*?\*\*)/gm, '<strong>$1</strong>')
@@ -1376,7 +1362,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
             .join('');
     }
 
-    // ---- UI ----
     function resetAnalysis() {
         state.parsedFile = null;
         state.chatMessages = [];
@@ -1400,7 +1385,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         const preview = document.getElementById('filePreview');
         const table = document.getElementById('previewTable');
         document.getElementById('previewCount').textContent = rows.length + ' filas en total';
-        
         const previewRows = rows.slice(0, CONFIG.PREVIEW_ROWS);
         let html = '<thead><tr>' + headers.map(h => '<th>' + escapeHtml(h) + '</th>').join('') + '</tr></thead>';
         html += '<tbody>';
@@ -1471,10 +1455,8 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
             let parsed;
             if (ext === 'csv') parsed = parseCSV(text);
             else parsed = parseJSON(text);
-            
             state.parsedFile = { ...parsed, type: ext, name: file.name };
             state.chatMessages = [];
-            
             showFileLoaded(file.name, parsed.rows.length, ext);
             showPreview(parsed.headers, parsed.rows);
             document.getElementById('analisisResult').style.display = 'none';
@@ -1488,26 +1470,21 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
     async function runAnalysis() {
         if (!state.parsedFile || state.isAnalyzing) return;
         state.isAnalyzing = true;
-        
         const btn = document.getElementById('analisisBtn');
         const result = document.getElementById('analisisResult');
         const resultBody = document.getElementById('analisisResultBody');
-        
         btn.disabled = true;
         btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;margin:0;border-width:2px"></div> Analizando…';
         result.style.display = 'block';
         resultBody.innerHTML = '<div class="typing-dots"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
         result.scrollIntoView({behavior:'smooth', block:'start'});
-        
         try {
             const summary = buildDataSummary(state.parsedFile);
             const prompt = buildAnalysisPrompt(summary);
             const analysisText = await callClaude(prompt);
-            
             resultBody.innerHTML = formatAnalysisResult(analysisText);
-            state.chatMessages = []; // reset chat para nuevo análisis
-            state.parsedFile._summary = summary; // cache
-            
+            state.chatMessages = [];
+            state.parsedFile._summary = summary;
             showSuggestedQuestions();
         } catch(e) {
             resultBody.innerHTML = '<p style="color:var(--red)">Error al analizar: ' + escapeHtml(e.message) + '</p>';
@@ -1522,27 +1499,20 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         if (!state.parsedFile || state.isAnalyzing) return;
         const q = question || sanitizeInput(document.getElementById('chatInput').value);
         if (!q) return;
-        
         state.isAnalyzing = true;
         const chatInput = document.getElementById('chatInput');
         const chatSendBtn = document.getElementById('chatSendBtn');
         if (chatInput) chatInput.value = '';
         if (chatSendBtn) chatSendBtn.disabled = true;
-        
-        // Ocultar sugerencias después de la primera pregunta
         document.getElementById('suggestionsSection').style.display = 'none';
-        
         addChatBubble('user', q);
         const chatHistory = document.getElementById('chatHistory');
         const dots = showTypingDots(chatHistory);
-        
         state.chatMessages.push({role:'user', content: q});
-        
         try {
             const summary = state.parsedFile._summary || buildDataSummary(state.parsedFile);
             const prompt = buildChatPrompt(q, summary, state.chatMessages.slice(0,-1));
             const answer = await callClaude(prompt);
-            
             dots.remove();
             addChatBubble('assistant', answer);
             state.chatMessages.push({role:'assistant', content: answer});
@@ -1566,7 +1536,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         if (fileInput) {
             fileInput.addEventListener('change', function() {
                 if (this.files && this.files[0]) handleFile(this.files[0]);
-                this.value = ''; // reset so same file can be re-selected
+                this.value = '';
             });
         }
         if (dropZone) {
@@ -1604,7 +1574,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         const listEl = document.getElementById('histList');
         if (!listEl) return;
 
-        // Reutilizar datos si ya están cargados
         if (state.allData.length === 0) {
             listEl.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Cargando transacciones…</span></div>';
             try {
@@ -1627,7 +1596,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         const row = document.getElementById('histMesRow');
         if (!row) return;
 
-        // Extraer meses únicos de los datos
         const mesesSet = new Set();
         state.allData.forEach(r => {
             const p = parseDate(r.Fecha);
@@ -1643,7 +1611,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         });
         row.innerHTML = html;
 
-        // Listener mes
         row.querySelectorAll('.hist-filter-chip').forEach(btn => {
             btn.addEventListener('click', function() {
                 row.querySelectorAll('.hist-filter-chip').forEach(b => b.classList.remove('active'));
@@ -1666,17 +1633,16 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
                 const ym = p.year + '-' + String(p.month).padStart(2,'0');
                 if (ym !== histState.mes) return false;
             }
-            // Búsqueda
+            // Búsqueda — FIX: usar Descripción con tilde
             if (histState.query) {
                 const q = histState.query.toLowerCase();
-                const concepto = (r.Concepto || r.concepto || r.Descripcion || r.descripcion || '').toLowerCase();
+                const concepto = (r['Descripción'] || r['Descripcion'] || r.Concepto || r.concepto || r.Notas || '').toLowerCase();
                 const cat = (r['Categoría'] || r['Categoria'] || '').toLowerCase();
                 const cuenta = (r['Cuenta_Origen'] || r['Cuenta_Destino'] || '').toLowerCase();
                 if (!concepto.includes(q) && !cat.includes(q) && !cuenta.includes(q)) return false;
             }
             return true;
         }).sort((a, b) => {
-            // Orden cronológico descendente
             const pa = parseDate(a.Fecha), pb = parseDate(b.Fecha);
             if (!pa || !pb) return 0;
             const da = new Date(pa.year, pa.month-1, pa.day);
@@ -1693,7 +1659,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         const filtered = filterHistorial();
         const visible = filtered.slice(0, (histState.page + 1) * histState.pageSize);
 
-        // Resumen
         const totalI = filtered.filter(r => r.Tipo==='Ingreso').reduce((s,r) => s+parseNumber(r.Monto), 0);
         const totalG = filtered.filter(r => r.Tipo==='Gasto').reduce((s,r) => s+parseNumber(r.Monto), 0);
         if (summaryEl) {
@@ -1708,7 +1673,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
             return;
         }
 
-        // Agrupar por mes
         const groups = {};
         visible.forEach(r => {
             const p = parseDate(r.Fecha);
@@ -1725,7 +1689,8 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
                 const tipoKey = tipo === 'valoracion' || tipo === 'valoración' ? 'valoracion' : tipo;
                 const monto = parseNumber(r.Monto);
                 const signo = tipo === 'gasto' ? '−' : tipo === 'ingreso' ? '+' : '';
-                const concepto = r.Concepto || r.concepto || r.Descripcion || r.descripcion || r.Notas || '—';
+                // FIX: usar Descripción con tilde como primera opción
+                const concepto = r['Descripción'] || r['Descripcion'] || r.Concepto || r.concepto || r.Notas || '—';
                 const cat = r['Categoría'] || r['Categoria'] || '';
                 const cuenta = r['Cuenta_Origen'] || r['CuentaOrigen'] || r['Cuenta_Destino'] || r['CuentaDestino'] || '';
                 const fecha = r.Fecha || '';
@@ -1763,7 +1728,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
     }
 
     function initHistorialListeners() {
-        // Tipo chips
         const tipoRow = document.getElementById('histTipoRow');
         if (tipoRow) {
             tipoRow.querySelectorAll('.hist-filter-chip').forEach(btn => {
@@ -1776,7 +1740,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
                 });
             });
         }
-        // Búsqueda
         const searchEl = document.getElementById('histSearch');
         if (searchEl) {
             let searchTimer;
@@ -1935,7 +1898,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         const aportHipoteca = total * (distValues.hipoteca || 0) / 100;
         const aportJubilacion = total * (distValues.jubilacion || 0) / 100;
 
-        // Datos desde state (cargados de Sheets)
         const saldoHipoteca = state.cuentasData['Hipoteca'] ?
             calcSaldo('Hipoteca', state.allData) : 0;
         const objHipoteca = getObjetivo('Hipoteca') || 35000;
@@ -1959,7 +1921,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
                 nombre: 'Fondo Emergencia',
                 saldo: saldoFE,
                 objetivo: objFE,
-                aportMensual: total * 0.03, // pequeña aportación de mantenimiento
+                aportMensual: total * 0.03,
                 descripcion: 'Colchón de seguridad'
             }
         ];
@@ -2008,7 +1970,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         const body = document.getElementById('est-coste-body');
         if (!body) return;
 
-        // Calcular días que cada euro de gasto retrasa la hipoteca
         const aportHipoteca = getEstIngresos() * ((() => {
             const el = document.getElementById('est-slider-hipoteca');
             return el ? parseInt(el.value) : 20;
@@ -2016,7 +1977,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
 
         const diasPorEuro = aportHipoteca > 0 ? 30 / aportHipoteca : 0;
 
-        // Usar datos del mes actual de Sheets
         const cur = state.allData.length > 0 ? (() => {
             const now = new Date();
             const mes = state.allData.filter(r => {
@@ -2069,7 +2029,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         const rentMensual = rentAnual / 100 / 12;
         if (rentValEl) rentValEl.textContent = rentAnual + '%';
 
-        // Edad actual asumida: 35 (David). Jubilación a 67.
         const edadActual = 35;
         const edadJubil = 67;
         const anosRestantes = edadJubil - edadActual;
@@ -2102,12 +2061,10 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
                 <span class="est-jubil-diff-val">−${fmt(diferencia)}</span>`;
         }
 
-        // Gráfico de crecimiento
         if (canvas) {
             const labels = [], dataNow = [], dataLate = [];
             const paso = Math.max(1, Math.floor(mesesRestantes / 24));
             for (let m = 0; m <= mesesRestantes; m += paso) {
-                const ano = (edadActual + m/12).toFixed(1);
                 labels.push(m === 0 ? 'Hoy' : Math.floor(edadActual + m/12) + 'a');
                 dataNow.push(Math.round(futureValue(aport, m, rentMensual)));
                 const mL = m - 60;
@@ -2212,7 +2169,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
     }
 
     async function loadEstrategia() {
-        // Asegurarse de que tenemos datos de Sheets
         if (state.allData.length === 0 || Object.keys(state.cuentasData).length === 0) {
             try {
                 await loadCuentas();
@@ -2224,13 +2180,11 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         restoreEstState();
         updateDistDisplay();
 
-        // Listeners de ingresos
         ['kembet','podocat','ub','otros'].forEach(id => {
             const el = document.getElementById('inc-' + id);
             if (el) el.addEventListener('input', () => { updateEstrategiaCalcs(); saveEstState(); });
         });
 
-        // Jubilación
         const jubilAport = document.getElementById('jubil-aportacion');
         const jubilRent = document.getElementById('jubil-rent');
         if (jubilAport) jubilAport.addEventListener('input', updateJubilacion);
