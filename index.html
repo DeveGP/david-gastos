@@ -631,6 +631,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
        ========================================================= */
     const CONFIG = Object.freeze({
         WEBHOOK: 'https://devegp.app.n8n.cloud/webhook/988ac9dc-924b-4baf-946e-ea6770ceb8d6',
+        WEBHOOK_CLAUDE: 'https://devegp.app.n8n.cloud/webhook/988ac9dc-924b-4baf-946e-ea6770ceb8d6',
         SHEET_ID: '18cy6FPY0jbiCP0fOBQxEoQGt7wUAcJM_Ffze9yYNYLk',
         API_KEY: 'AIzaSyAPRB7T_g__DGj4BUxABQk1Xn7jPgRckUg',
         CLAUDE_MODEL: 'claude-sonnet-4-20250514',
@@ -1076,6 +1077,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         const totalG = gastos.reduce((a,b) => a+b, 0);
         const totalAhorro = totalI - totalG;
 
+        // Mejor y peor mes (por ahorro)
         const mesesConDatos = ahorro.map((v,i) => ({v, i})).filter(x => ingresos[x.i] > 0);
         const mejorMes = mesesConDatos.length ? mesesConDatos.reduce((a,b) => a.v > b.v ? a : b) : null;
         const peorMes  = mesesConDatos.length ? mesesConDatos.reduce((a,b) => a.v < b.v ? a : b) : null;
@@ -1114,6 +1116,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
             }
         });
 
+        // KPIs anuales
         const iEl = document.getElementById('anual-total-i');
         const gEl = document.getElementById('anual-total-g');
         const bEl = document.getElementById('anual-total-bal');
@@ -1212,15 +1215,20 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
        ANÁLISIS CSV/JSON
        ========================================================= */
 
+    // ---- Parsers ----
     function parseCSV(text) {
-        const lines = text.trim().split(/\r?\n/);
+        // Eliminar BOM si existe
+        const clean = text.replace(/^\uFEFF/, '');
+        const lines = clean.split(/\r?\n/);
         if (lines.length < 2) throw new Error('El CSV necesita al menos cabecera y una fila de datos.');
-        
+
+        // Detectar separador global (punto y coma o coma)
+        const sep = lines.slice(0, 5).join('').includes(';') ? ';' : ',';
+
         function splitLine(line) {
             const result = [];
             let current = '';
             let inQuotes = false;
-            const sep = line.includes(';') && !line.includes(',') ? ';' : ',';
             for (let i = 0; i < line.length; i++) {
                 const ch = line[i];
                 if (ch === '"') { inQuotes = !inQuotes; continue; }
@@ -1230,17 +1238,66 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
             result.push(current.trim());
             return result;
         }
-        
-        const headers = splitLine(lines[0]);
+
+        // Detectar fila de cabeceras: primera fila con al menos 3 campos no vacíos
+        // que no sea un metadato de una sola celda (como "MOVIMIENTOS DESDE...")
+        let headerIdx = -1;
+        for (let i = 0; i < Math.min(lines.length, 10); i++) {
+            if (!lines[i].trim()) continue;
+            const cols = splitLine(lines[i]);
+            const nonEmpty = cols.filter(c => c.trim().length > 0);
+            // La fila de cabecera tiene varios campos con texto descriptivo
+            if (nonEmpty.length >= 3 && !lines[i].includes('MOVIMIENTOS DESDE') && !lines[i].includes('HASTA:')) {
+                // Verificar que la siguiente fila no vacía tiene datos numéricos o de fecha → es cabecera
+                headerIdx = i;
+                break;
+            }
+        }
+        if (headerIdx === -1) throw new Error('No se encontraron cabeceras en el CSV.');
+
+        const rawHeaders = splitLine(lines[headerIdx]);
+        // Limpiar cabeceras vacías del final
+        const headers = rawHeaders.map(h => h.trim()).filter((h, i, arr) => {
+            // Mantener cabeceras no vacías o las que tienen datos después
+            return h.length > 0 || i < arr.findIndex((x, j) => j > i && x.length > 0);
+        });
+        // Usar índices para cabeceras vacías
+        const finalHeaders = rawHeaders.map((h, i) => h.trim() || `Col${i+1}`);
+
         const rows = [];
-        for (let i = 1; i < lines.length; i++) {
+        for (let i = headerIdx + 1; i < lines.length; i++) {
             if (!lines[i].trim()) continue;
             const vals = splitLine(lines[i]);
+            // Saltar filas que son claramente metadatos (primera celda vacía y pocas columnas reales)
+            const nonEmpty = vals.filter(v => v.trim().length > 0);
+            if (nonEmpty.length < 2) continue;
             const obj = {};
-            headers.forEach((h, idx) => { obj[h] = vals[idx] !== undefined ? vals[idx] : ''; });
+            finalHeaders.forEach((h, idx) => { obj[h] = vals[idx] !== undefined ? vals[idx].trim() : ''; });
             rows.push(obj);
         }
-        return { headers, rows };
+
+        if (rows.length === 0) throw new Error('No se encontraron filas de datos en el CSV.');
+
+        // Para extractos de CaixaBank: crear campos normalizados
+        const isCaixaBank = finalHeaders.includes('F. Operación') || finalHeaders.includes('Concepto propio') || finalHeaders.includes('Ingreso (+)');
+        if (isCaixaBank) {
+            rows.forEach(r => {
+                // Concepto: usar "Concepto propio" limpio, fallback a "Concepto común"
+                const cp = (r['Concepto propio'] || '').trim().replace(/\s+/g, ' ');
+                const cc = (r['Concepto común'] || '').trim();
+                const cc1 = (r['Concepto complementario 1'] || '').trim().replace(/\s+/g, ' ');
+                r._concepto = cp || cc1 || cc || '—';
+                // Fecha normalizada
+                r._fecha = r['F. Operación'] || r['F. Valor'] || '';
+                // Importe: ingreso positivo, gasto negativo
+                const ing = parseNumber((r['Ingreso (+)'] || '').replace('.','').replace(',','.'));
+                const gas = parseNumber((r['Gasto (-)'] || '').replace('.','').replace(',','.'));
+                r._importe = ing > 0 ? ing : gas > 0 ? -gas : 0;
+                r._tipo = ing > 0 ? 'Ingreso' : gas > 0 ? 'Gasto' : 'Movimiento';
+            });
+        }
+
+        return { headers: finalHeaders, rows, isCaixaBank };
     }
 
     function parseJSON(text) {
@@ -1249,6 +1306,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
         if (Array.isArray(data)) {
             rows = data;
         } else if (typeof data === 'object' && data !== null) {
+            // Buscar el primer array dentro del objeto
             const key = Object.keys(data).find(k => Array.isArray(data[k]));
             if (key) rows = data[key];
             else rows = [data];
@@ -1259,30 +1317,44 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-hei
     }
 
     function buildDataSummary(parsedFile) {
-        const { headers, rows } = parsedFile;
+        const { headers, rows, isCaixaBank } = parsedFile;
         const totalRows = rows.length;
         const sample = rows.slice(0, Math.min(CONFIG.MAX_ROWS_FOR_AI, totalRows));
 
-        const numCols = headers.filter(h => {
-            const vals = sample.map(r => parseFloat(String(r[h]).replace(',','.'))).filter(v => !isNaN(v));
-            return vals.length > sample.length * 0.5;
-        });
-
         let statsText = '';
-        numCols.forEach(col => {
-            const vals = sample.map(r => parseFloat(String(r[col]).replace(',','.'))).filter(v => !isNaN(v));
-            const sum = vals.reduce((a,b) => a+b, 0);
-            const avg = sum / vals.length;
-            const min = Math.min(...vals);
-            const max = Math.max(...vals);
-            statsText += `\n- ${col}: suma=${sum.toFixed(2)}, media=${avg.toFixed(2)}, min=${min}, max=${max}`;
-        });
+        let sampleRows = '';
 
-        const sampleRows = sample.slice(0, 20).map(r =>
-            headers.map(h => r[h] || '').join(' | ')
-        ).join('\n');
+        if (isCaixaBank) {
+            // Estadísticas específicas CaixaBank
+            const ingresos = sample.filter(r => r._tipo === 'Ingreso').map(r => r._importe);
+            const gastos = sample.filter(r => r._tipo === 'Gasto').map(r => Math.abs(r._importe));
+            const totalI = ingresos.reduce((a,b) => a+b, 0);
+            const totalG = gastos.reduce((a,b) => a+b, 0);
+            statsText = `\n- Total ingresos: ${totalI.toFixed(2)}€ (${ingresos.length} movimientos)`
+                      + `\n- Total gastos: ${totalG.toFixed(2)}€ (${gastos.length} movimientos)`
+                      + `\n- Balance: ${(totalI - totalG).toFixed(2)}€`
+                      + (gastos.length ? `\n- Gasto medio por operación: ${(totalG/gastos.length).toFixed(2)}€` : '');
+            sampleRows = sample.slice(0, 30).map(r =>
+                `${r._fecha} | ${r._tipo} | ${r._importe > 0 ? '+' : ''}${r._importe.toFixed(2)}€ | ${r._concepto}`
+            ).join('\n');
+        } else {
+            // Estadísticas genéricas
+            const numCols = headers.filter(h => {
+                const vals = sample.map(r => parseFloat(String(r[h]).replace(',','.'))).filter(v => !isNaN(v));
+                return vals.length > sample.length * 0.5;
+            });
+            numCols.forEach(col => {
+                const vals = sample.map(r => parseFloat(String(r[col]).replace(',','.'))).filter(v => !isNaN(v));
+                const sum = vals.reduce((a,b) => a+b, 0);
+                const avg = sum / vals.length;
+                statsText += `\n- ${col}: suma=${sum.toFixed(2)}, media=${avg.toFixed(2)}, min=${Math.min(...vals)}, max=${Math.max(...vals)}`;
+            });
+            sampleRows = sample.slice(0, 20).map(r =>
+                headers.map(h => r[h] || '').join(' | ')
+            ).join('\n');
+        }
 
-        return { totalRows, headers, statsText, sampleRows, sampleCount: sample.length };
+        return { totalRows, headers, statsText, sampleRows, sampleCount: sample.length, isCaixaBank };
     }
 
     function buildAnalysisPrompt(summary) {
@@ -1311,6 +1383,7 @@ Sé directo. Si algo no cuadra, dilo. No suavices.`;
 
     function buildChatPrompt(userQuestion, summary, chatHistory) {
         const historyText = chatHistory.map(m => `${m.role === 'user' ? 'David' : 'Asesor'}: ${m.content}`).join('\n');
+        
         return `Eres el asesor financiero personal de David García. Responde su pregunta sobre el fichero financiero que acaba de subir.
 
 CONTEXTO DEL FICHERO:
@@ -1328,24 +1401,25 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
     }
 
     async function callClaude(prompt) {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
+        // Llamamos a través del webhook N8N para evitar CORS
+        // N8N debe tener un nodo que reciba {prompt} y llame a la API de Anthropic
+        const response = await fetch(CONFIG.WEBHOOK_CLAUDE, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: CONFIG.CLAUDE_MODEL,
-                max_tokens: 1000,
-                messages: [{ role: 'user', content: prompt }]
-            })
+            body: JSON.stringify({ prompt, tipo: 'analisis_csv' })
         });
         if (!response.ok) {
             const err = await response.text();
-            throw new Error('API error ' + response.status + ': ' + err.substring(0, 200));
+            throw new Error('Error del servidor: ' + response.status + ' — ' + err.substring(0, 200));
         }
         const data = await response.json();
-        return data.content.filter(b => b.type === 'text').map(b => b.text).join('');
+        // N8N puede devolver { texto: '...' } o { output: '...' } o string directo
+        if (typeof data === 'string') return data;
+        return data.texto || data.output || data.respuesta || data.text || data.content || JSON.stringify(data);
     }
 
     function formatAnalysisResult(text) {
+        // Convertir markdown básico a HTML
         return text
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/^(\d+\.\s+\*\*.*?\*\*)/gm, '<strong>$1</strong>')
@@ -1362,6 +1436,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
             .join('');
     }
 
+    // ---- UI ----
     function resetAnalysis() {
         state.parsedFile = null;
         state.chatMessages = [];
@@ -1381,66 +1456,137 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         document.getElementById('fileLoaded').style.display = 'flex';
     }
 
-    function showPreview(headers, rows) {
+    function showPreview(headers, rows, isCaixaBank) {
         const preview = document.getElementById('filePreview');
         const table = document.getElementById('previewTable');
         document.getElementById('previewCount').textContent = rows.length + ' filas en total';
+
         const previewRows = rows.slice(0, CONFIG.PREVIEW_ROWS);
-        let html = '<thead><tr>' + headers.map(h => '<th>' + escapeHtml(h) + '</th>').join('') + '</tr></thead>';
-        html += '<tbody>';
-        previewRows.forEach(row => {
-            html += '<tr>' + headers.map(h => '<td title="' + escapeHtml(String(row[h]||'')) + '">' + escapeHtml(String(row[h]||'').substring(0,30)) + '</td>').join('') + '</tr>';
-        });
-        html += '</tbody>';
-        table.innerHTML = html;
+
+        if (isCaixaBank) {
+            // Vista previa limpia para CaixaBank
+            table.innerHTML = '<thead><tr><th>Fecha</th><th>Tipo</th><th>Importe</th><th>Concepto</th></tr></thead><tbody>' +
+                previewRows.map(r => {
+                    const cls = r._tipo === 'Ingreso' ? 'color:var(--green)' : 'color:var(--red)';
+                    const signo = r._tipo === 'Ingreso' ? '+' : '−';
+                    return `<tr>
+                        <td>${escapeHtml(r._fecha)}</td>
+                        <td>${escapeHtml(r._tipo)}</td>
+                        <td style="${cls};font-weight:600">${signo}${fmt(Math.abs(r._importe))}</td>
+                        <td>${escapeHtml((r._concepto||'').substring(0,40))}</td>
+                    </tr>`;
+                }).join('') + '</tbody>';
+        } else {
+            table.innerHTML = '<thead><tr>' + headers.slice(0,6).map(h => '<th>' + escapeHtml(h) + '</th>').join('') + '</tr></thead><tbody>' +
+                previewRows.map(row => '<tr>' + headers.slice(0,6).map(h => '<td title="' + escapeHtml(String(row[h]||'')) + '">' + escapeHtml(String(row[h]||'').substring(0,25)) + '</td>').join('') + '</tr>').join('') +
+                '</tbody>';
+        }
+
         preview.style.display = 'block';
         document.getElementById('analisisBtn').style.display = 'flex';
     }
 
-    function showSuggestedQuestions() {
-        const suggestions = [
-            '¿Cuál es la categoría con más gasto?',
-            '¿Hay gastos recurrentes que se repiten cada mes?',
-            '¿Cuánto he gastado en total?',
-            '¿Qué días de la semana gasto más?',
-            '¿Hay algún gasto inusualmente alto?'
-        ];
-        const chips = document.getElementById('questionChips');
-        chips.innerHTML = '';
-        suggestions.forEach(q => {
-            const btn = document.createElement('button');
-            btn.className = 'question-chip';
-            btn.type = 'button';
-            btn.textContent = q;
-            btn.addEventListener('click', () => sendChatMessage(q));
-            chips.appendChild(btn);
-        });
-        document.getElementById('chatSection').style.display = 'block';
-    }
+    function runAnalysisLocal() {
+        if (!state.parsedFile) return;
+        const { rows, isCaixaBank } = state.parsedFile;
+        const result = document.getElementById('analisisResult');
+        const resultBody = document.getElementById('analisisResultBody');
+        result.style.display = 'block';
+        result.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-    function addChatBubble(role, content) {
-        const history = document.getElementById('chatHistory');
-        const bubble = document.createElement('div');
-        bubble.className = 'chat-bubble ' + role;
-        const label = document.createElement('div');
-        label.className = 'chat-bubble-label';
-        label.textContent = role === 'user' ? 'Tú' : 'Análisis';
-        const body = document.createElement('div');
-        body.innerHTML = formatAnalysisResult(content);
-        bubble.appendChild(label);
-        bubble.appendChild(body);
-        history.appendChild(bubble);
-        bubble.scrollIntoView({behavior:'smooth', block:'nearest'});
-    }
+        if (isCaixaBank) {
+            // Análisis específico CaixaBank
+            const ingresos = rows.filter(r => r._tipo === 'Ingreso');
+            const gastos   = rows.filter(r => r._tipo === 'Gasto');
+            const totalI = ingresos.reduce((s,r) => s + r._importe, 0);
+            const totalG = gastos.reduce((s,r) => s + Math.abs(r._importe), 0);
+            const balance = totalI - totalG;
+            const tasaAhorro = totalI > 0 ? Math.round(balance / totalI * 100) : 0;
 
-    function showTypingDots(container) {
-        const dots = document.createElement('div');
-        dots.className = 'chat-bubble assistant';
-        dots.id = 'typingDots';
-        dots.innerHTML = '<div class="typing-dots"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
-        container.appendChild(dots);
-        dots.scrollIntoView({behavior:'smooth', block:'nearest'});
-        return dots;
+            // Top conceptos por gasto
+            const conceptoMap = {};
+            gastos.forEach(r => {
+                const c = (r._concepto || '—').substring(0, 35).trim();
+                conceptoMap[c] = (conceptoMap[c] || 0) + Math.abs(r._importe);
+            });
+            const topConceptos = Object.entries(conceptoMap).sort((a,b) => b[1]-a[1]).slice(0, 8);
+
+            // Detectar posibles recurrentes (aparecen 2+ veces)
+            const recurrentes = Object.entries(conceptoMap)
+                .filter(([c]) => gastos.filter(r => r._concepto && r._concepto.startsWith(c.substring(0,15))).length >= 2)
+                .slice(0, 5);
+
+            // Gasto por mes
+            const mesMapa = {};
+            gastos.forEach(r => {
+                const parts = (r._fecha || '').split('/');
+                if (parts.length === 3) {
+                    const key = CONFIG.MESES[parseInt(parts[1])-1] + ' ' + parts[2];
+                    mesMapa[key] = (mesMapa[key] || 0) + Math.abs(r._importe);
+                }
+            });
+            const meses = Object.entries(mesMapa).sort((a,b) => a[0].localeCompare(b[0]));
+
+            // Mayor gasto individual
+            const mayorGasto = gastos.reduce((max, r) => Math.abs(r._importe) > Math.abs(max._importe) ? r : max, gastos[0] || {});
+
+            resultBody.innerHTML =
+                // KPIs
+                `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+                    <div style="background:var(--green-bg);border-radius:var(--radius-sm);padding:10px;text-align:center">
+                        <div style="font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Ingresos</div>
+                        <div style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--green)">${fmt(totalI)}</div>
+                    </div>
+                    <div style="background:var(--red-bg);border-radius:var(--radius-sm);padding:10px;text-align:center">
+                        <div style="font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Gastos</div>
+                        <div style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--red)">${fmt(totalG)}</div>
+                    </div>
+                    <div style="background:var(--gold-light);border-radius:var(--radius-sm);padding:10px;text-align:center">
+                        <div style="font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Ahorro</div>
+                        <div style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--gold)">${tasaAhorro}%</div>
+                    </div>
+                </div>` +
+
+                // Gasto por mes
+                (meses.length > 0 ? `<p><strong>Gasto por mes:</strong></p>` +
+                meses.map(([mes, amt]) => {
+                    const max = Math.max(...meses.map(m => m[1]));
+                    const pct = Math.round(amt / max * 100);
+                    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                        <span style="font-size:12px;min-width:90px;color:var(--sub)">${mes}</span>
+                        <div style="flex:1;height:5px;background:var(--gold-light);border-radius:3px;overflow:hidden">
+                            <div style="width:${pct}%;height:100%;background:var(--red);border-radius:3px"></div>
+                        </div>
+                        <span style="font-size:12px;font-weight:600;min-width:80px;text-align:right">${fmt(amt)}</span>
+                    </div>`;
+                }).join('') : '') +
+
+                // Top gastos
+                `<p style="margin-top:14px"><strong>Top gastos del período:</strong></p>` +
+                topConceptos.map(([c, amt]) => `<div class="highlight" style="display:flex;justify-content:space-between;margin-bottom:4px"><span>${escapeHtml(c)}</span><strong>${fmt(amt)}</strong></div>`).join('') +
+
+                // Mayor gasto individual
+                (mayorGasto._concepto ? `<p style="margin-top:14px"><strong>Mayor operación individual:</strong> ${escapeHtml(mayorGasto._concepto)} — <span style="color:var(--red)">${fmt(Math.abs(mayorGasto._importe))}</span> el ${escapeHtml(mayorGasto._fecha)}</p>` : '') +
+
+                // Posibles recurrentes
+                (recurrentes.length > 0 ? `<p style="margin-top:14px"><strong>Posibles gastos recurrentes:</strong></p><p style="font-size:13px;color:var(--sub)">${recurrentes.map(([c]) => escapeHtml(c)).join(', ')}</p>` : '') +
+
+                `<p style="margin-top:16px;font-size:12px;color:var(--sub)">Período analizado: ${rows[rows.length-1]?._fecha || '—'} → ${rows[0]?._fecha || '—'} · ${rows.length} movimientos</p>`;
+
+        } else {
+            // Análisis genérico
+            const summary = buildDataSummary(state.parsedFile);
+            resultBody.innerHTML = `<p><strong>Fichero cargado correctamente.</strong></p>
+                <p>${summary.totalRows} filas · ${summary.headers.length} columnas</p>
+                ${summary.statsText ? '<p><strong>Estadísticas numéricas:</strong></p><pre style="font-size:11px;color:var(--sub);line-height:1.6">' + escapeHtml(summary.statsText) + '</pre>' : ''}
+                <p style="margin-top:12px;font-size:13px;color:var(--sub)">Copia los datos que necesites y analízalos en Claude chat para sacar conclusiones.</p>`;
+        }
+
+        // Actualizar botón
+        const btn = document.getElementById('analisisBtn');
+        if (btn) {
+            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg> Analizar de nuevo';
+        }
     }
 
     async function handleFile(file) {
@@ -1455,73 +1601,15 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
             let parsed;
             if (ext === 'csv') parsed = parseCSV(text);
             else parsed = parseJSON(text);
+
             state.parsedFile = { ...parsed, type: ext, name: file.name };
-            state.chatMessages = [];
+
             showFileLoaded(file.name, parsed.rows.length, ext);
-            showPreview(parsed.headers, parsed.rows);
+            showPreview(parsed.headers, parsed.rows, parsed.isCaixaBank);
             document.getElementById('analisisResult').style.display = 'none';
             document.getElementById('chatSection').style.display = 'none';
-            document.getElementById('chatHistory').innerHTML = '';
         } catch(e) {
             alert('Error al leer el fichero: ' + e.message);
-        }
-    }
-
-    async function runAnalysis() {
-        if (!state.parsedFile || state.isAnalyzing) return;
-        state.isAnalyzing = true;
-        const btn = document.getElementById('analisisBtn');
-        const result = document.getElementById('analisisResult');
-        const resultBody = document.getElementById('analisisResultBody');
-        btn.disabled = true;
-        btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;margin:0;border-width:2px"></div> Analizando…';
-        result.style.display = 'block';
-        resultBody.innerHTML = '<div class="typing-dots"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
-        result.scrollIntoView({behavior:'smooth', block:'start'});
-        try {
-            const summary = buildDataSummary(state.parsedFile);
-            const prompt = buildAnalysisPrompt(summary);
-            const analysisText = await callClaude(prompt);
-            resultBody.innerHTML = formatAnalysisResult(analysisText);
-            state.chatMessages = [];
-            state.parsedFile._summary = summary;
-            showSuggestedQuestions();
-        } catch(e) {
-            resultBody.innerHTML = '<p style="color:var(--red)">Error al analizar: ' + escapeHtml(e.message) + '</p>';
-        } finally {
-            state.isAnalyzing = false;
-            btn.disabled = false;
-            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg> Analizar de nuevo';
-        }
-    }
-
-    async function sendChatMessage(question) {
-        if (!state.parsedFile || state.isAnalyzing) return;
-        const q = question || sanitizeInput(document.getElementById('chatInput').value);
-        if (!q) return;
-        state.isAnalyzing = true;
-        const chatInput = document.getElementById('chatInput');
-        const chatSendBtn = document.getElementById('chatSendBtn');
-        if (chatInput) chatInput.value = '';
-        if (chatSendBtn) chatSendBtn.disabled = true;
-        document.getElementById('suggestionsSection').style.display = 'none';
-        addChatBubble('user', q);
-        const chatHistory = document.getElementById('chatHistory');
-        const dots = showTypingDots(chatHistory);
-        state.chatMessages.push({role:'user', content: q});
-        try {
-            const summary = state.parsedFile._summary || buildDataSummary(state.parsedFile);
-            const prompt = buildChatPrompt(q, summary, state.chatMessages.slice(0,-1));
-            const answer = await callClaude(prompt);
-            dots.remove();
-            addChatBubble('assistant', answer);
-            state.chatMessages.push({role:'assistant', content: answer});
-        } catch(e) {
-            dots.remove();
-            addChatBubble('assistant', 'Error al responder: ' + e.message);
-        } finally {
-            state.isAnalyzing = false;
-            if (chatSendBtn) chatSendBtn.disabled = false;
         }
     }
 
@@ -1530,8 +1618,6 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         const fileInput = document.getElementById('fileInput');
         const fileClear = document.getElementById('fileClear');
         const analisisBtn = document.getElementById('analisisBtn');
-        const chatSendBtn = document.getElementById('chatSendBtn');
-        const chatInput = document.getElementById('chatInput');
 
         if (fileInput) {
             fileInput.addEventListener('change', function() {
@@ -1550,13 +1636,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
             });
         }
         if (fileClear) fileClear.addEventListener('click', resetAnalysis);
-        if (analisisBtn) analisisBtn.addEventListener('click', runAnalysis);
-        if (chatSendBtn) chatSendBtn.addEventListener('click', () => sendChatMessage());
-        if (chatInput) {
-            chatInput.addEventListener('keydown', function(e) {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
-            });
-        }
+        if (analisisBtn) analisisBtn.addEventListener('click', runAnalysisLocal);
     }
 
     /* =========================================================
@@ -1574,6 +1654,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         const listEl = document.getElementById('histList');
         if (!listEl) return;
 
+        // Reutilizar datos si ya están cargados
         if (state.allData.length === 0) {
             listEl.innerHTML = '<div class="loading-state"><div class="spinner"></div><span>Cargando transacciones…</span></div>';
             try {
@@ -1596,6 +1677,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         const row = document.getElementById('histMesRow');
         if (!row) return;
 
+        // Extraer meses únicos de los datos
         const mesesSet = new Set();
         state.allData.forEach(r => {
             const p = parseDate(r.Fecha);
@@ -1611,6 +1693,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         });
         row.innerHTML = html;
 
+        // Listener mes
         row.querySelectorAll('.hist-filter-chip').forEach(btn => {
             btn.addEventListener('click', function() {
                 row.querySelectorAll('.hist-filter-chip').forEach(b => b.classList.remove('active'));
@@ -1633,16 +1716,17 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
                 const ym = p.year + '-' + String(p.month).padStart(2,'0');
                 if (ym !== histState.mes) return false;
             }
-            // Búsqueda — FIX: usar Descripción con tilde
+            // Búsqueda
             if (histState.query) {
                 const q = histState.query.toLowerCase();
-                const concepto = (r['Descripción'] || r['Descripcion'] || r.Concepto || r.concepto || r.Notas || '').toLowerCase();
+                const concepto = (r.Concepto || r.concepto || r.Descripcion || r.descripcion || '').toLowerCase();
                 const cat = (r['Categoría'] || r['Categoria'] || '').toLowerCase();
                 const cuenta = (r['Cuenta_Origen'] || r['Cuenta_Destino'] || '').toLowerCase();
                 if (!concepto.includes(q) && !cat.includes(q) && !cuenta.includes(q)) return false;
             }
             return true;
         }).sort((a, b) => {
+            // Orden cronológico descendente
             const pa = parseDate(a.Fecha), pb = parseDate(b.Fecha);
             if (!pa || !pb) return 0;
             const da = new Date(pa.year, pa.month-1, pa.day);
@@ -1659,6 +1743,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         const filtered = filterHistorial();
         const visible = filtered.slice(0, (histState.page + 1) * histState.pageSize);
 
+        // Resumen
         const totalI = filtered.filter(r => r.Tipo==='Ingreso').reduce((s,r) => s+parseNumber(r.Monto), 0);
         const totalG = filtered.filter(r => r.Tipo==='Gasto').reduce((s,r) => s+parseNumber(r.Monto), 0);
         if (summaryEl) {
@@ -1673,6 +1758,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
             return;
         }
 
+        // Agrupar por mes
         const groups = {};
         visible.forEach(r => {
             const p = parseDate(r.Fecha);
@@ -1689,8 +1775,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
                 const tipoKey = tipo === 'valoracion' || tipo === 'valoración' ? 'valoracion' : tipo;
                 const monto = parseNumber(r.Monto);
                 const signo = tipo === 'gasto' ? '−' : tipo === 'ingreso' ? '+' : '';
-                // FIX: usar Descripción con tilde como primera opción
-                const concepto = r['Descripción'] || r['Descripcion'] || r.Concepto || r.concepto || r.Notas || '—';
+                const concepto = r.Concepto || r.concepto || r.Descripcion || r.descripcion || r.Notas || '—';
                 const cat = r['Categoría'] || r['Categoria'] || '';
                 const cuenta = r['Cuenta_Origen'] || r['CuentaOrigen'] || r['Cuenta_Destino'] || r['CuentaDestino'] || '';
                 const fecha = r.Fecha || '';
@@ -1728,6 +1813,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
     }
 
     function initHistorialListeners() {
+        // Tipo chips
         const tipoRow = document.getElementById('histTipoRow');
         if (tipoRow) {
             tipoRow.querySelectorAll('.hist-filter-chip').forEach(btn => {
@@ -1740,6 +1826,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
                 });
             });
         }
+        // Búsqueda
         const searchEl = document.getElementById('histSearch');
         if (searchEl) {
             let searchTimer;
@@ -1898,6 +1985,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         const aportHipoteca = total * (distValues.hipoteca || 0) / 100;
         const aportJubilacion = total * (distValues.jubilacion || 0) / 100;
 
+        // Datos desde state (cargados de Sheets)
         const saldoHipoteca = state.cuentasData['Hipoteca'] ?
             calcSaldo('Hipoteca', state.allData) : 0;
         const objHipoteca = getObjetivo('Hipoteca') || 35000;
@@ -1921,7 +2009,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
                 nombre: 'Fondo Emergencia',
                 saldo: saldoFE,
                 objetivo: objFE,
-                aportMensual: total * 0.03,
+                aportMensual: total * 0.03, // pequeña aportación de mantenimiento
                 descripcion: 'Colchón de seguridad'
             }
         ];
@@ -1970,6 +2058,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         const body = document.getElementById('est-coste-body');
         if (!body) return;
 
+        // Calcular días que cada euro de gasto retrasa la hipoteca
         const aportHipoteca = getEstIngresos() * ((() => {
             const el = document.getElementById('est-slider-hipoteca');
             return el ? parseInt(el.value) : 20;
@@ -1977,6 +2066,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
 
         const diasPorEuro = aportHipoteca > 0 ? 30 / aportHipoteca : 0;
 
+        // Usar datos del mes actual de Sheets
         const cur = state.allData.length > 0 ? (() => {
             const now = new Date();
             const mes = state.allData.filter(r => {
@@ -2029,6 +2119,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         const rentMensual = rentAnual / 100 / 12;
         if (rentValEl) rentValEl.textContent = rentAnual + '%';
 
+        // Edad actual asumida: 35 (David). Jubilación a 67.
         const edadActual = 35;
         const edadJubil = 67;
         const anosRestantes = edadJubil - edadActual;
@@ -2061,10 +2152,12 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
                 <span class="est-jubil-diff-val">−${fmt(diferencia)}</span>`;
         }
 
+        // Gráfico de crecimiento
         if (canvas) {
             const labels = [], dataNow = [], dataLate = [];
             const paso = Math.max(1, Math.floor(mesesRestantes / 24));
             for (let m = 0; m <= mesesRestantes; m += paso) {
+                const ano = (edadActual + m/12).toFixed(1);
                 labels.push(m === 0 ? 'Hoy' : Math.floor(edadActual + m/12) + 'a');
                 dataNow.push(Math.round(futureValue(aport, m, rentMensual)));
                 const mL = m - 60;
@@ -2169,6 +2262,7 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
     }
 
     async function loadEstrategia() {
+        // Asegurarse de que tenemos datos de Sheets
         if (state.allData.length === 0 || Object.keys(state.cuentasData).length === 0) {
             try {
                 await loadCuentas();
@@ -2180,11 +2274,13 @@ Responde de forma directa y concisa. Usa números reales del fichero cuando sea 
         restoreEstState();
         updateDistDisplay();
 
+        // Listeners de ingresos
         ['kembet','podocat','ub','otros'].forEach(id => {
             const el = document.getElementById('inc-' + id);
             if (el) el.addEventListener('input', () => { updateEstrategiaCalcs(); saveEstState(); });
         });
 
+        // Jubilación
         const jubilAport = document.getElementById('jubil-aportacion');
         const jubilRent = document.getElementById('jubil-rent');
         if (jubilAport) jubilAport.addEventListener('input', updateJubilacion);
